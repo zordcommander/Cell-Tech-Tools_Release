@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.28.2
+// @version      2.28.3
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -718,6 +718,25 @@ html[data-ct-site-theme] .btn-primary,html[data-ct-site-theme] .btn-success:not(
 html[data-ct-site-theme] .breadcrumb,html[data-ct-site-theme] .pagination>li>a,html[data-ct-site-theme] .pagination>li>span{background:var(--ct-surface)!important;color:var(--ct-accent)!important;border-color:var(--ct-border)!important}
 html[data-ct-site-theme] hr{border-color:var(--ct-border)!important}
 html[data-ct-site-theme] .text-muted,html[data-ct-site-theme] small{color:var(--ct-muted)!important}
+
+/* Preserve RepairGenie's own status/feedback colors.
+   RG briefly sets success states (such as a received/scanned serial) to green.
+   Theme-wide !important text colors must not erase those workflow cues. */
+html[data-ct-site-theme] .text-success,
+html[data-ct-site-theme] .success,
+html[data-ct-site-theme] .has-success,
+html[data-ct-site-theme] .has-success .form-control-feedback,
+html[data-ct-site-theme] [style*="color: green" i],
+html[data-ct-site-theme] [style*="color:green" i],
+html[data-ct-site-theme] [style*="color: #008000" i],
+html[data-ct-site-theme] [style*="color:#008000" i],
+html[data-ct-site-theme] [style*="color: rgb(0, 128, 0)" i],
+html[data-ct-site-theme] [style*="color:rgb(0, 128, 0)" i]{color:#008000!important}
+html[data-ct-site-theme] .bg-success,
+html[data-ct-site-theme] tr.success>td,
+html[data-ct-site-theme] td.success,
+html[data-ct-site-theme] th.success{background-color:#dff0d8!important;color:#3c763d!important}
+
 html[data-ct-site-theme="dark"] .alert-success{background:#1f4430!important;color:#dff7e8!important;border-color:#326947!important}
 html[data-ct-site-theme="dark"] .alert-info{background:#263d55!important;color:#e2f2ff!important;border-color:#3e6585!important}
 html[data-ct-site-theme="dark"] .alert-warning{background:#51431d!important;color:#fff2c4!important;border-color:#7a672b!important}
