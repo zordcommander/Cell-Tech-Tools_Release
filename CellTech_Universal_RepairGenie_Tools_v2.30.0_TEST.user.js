@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.1
+// @version      2.31.2
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -30,8 +30,8 @@ function ctLameMode(){
 }
 function ctStoredTheme(){return localStorage.getItem(P+'theme')||'purple'}
 function ctToolLabel(tab){
- const fun={drop:'Power Processor',parts:'Parts Forge',reset:'Rewind the Battle',minions:'Release the Minions',reports:'Battle Reports',settings:'Settings'};
- const plain={drop:'Drop / Delivery Processor',parts:'Parts Uploader',reset:'Reset Case',minions:'Release Non-Warranty Hold',reports:'Results / Reports',settings:'Settings'};
+ const fun={drop:'Power Processor',parts:'Parts Forge',reset:'Rewind the Battle',minions:'Release the Minions',info:'Castle Grayskull Intel',reports:'Battle Reports',settings:'Settings'};
+ const plain={drop:'Drop / Delivery Processor',parts:'Parts Uploader',reset:'Reset Case',minions:'Release Non-Warranty Hold',info:'Info Finder',reports:'Results / Reports',settings:'Settings'};
  return (ctLameMode()?plain:fun)[tab]||tab
 }
 function ctActionLabel(fun,plain){return ctLameMode()?plain:fun}
@@ -278,7 +278,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.1'}catch(_){return'2.31.1'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.2'}catch(_){return'2.31.2'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -927,7 +927,7 @@ function ctAddSideMenu(){
   if(!document.getElementById('ct_tools_fallback')){const b=document.createElement('button');b.id='ct_tools_fallback';b.className='ct-tools-fallback';b.textContent='Cell Tech Tools v'+CT_VERSION;b.onclick=()=>ctOpenWorkspace('drop');document.body.appendChild(b)}
   return
  }
- const tabs=['drop','parts','reset','minions','reports','settings'];
+ const tabs=['drop','parts','reset','minions','info','reports','settings'];
  const li=document.createElement('li');li.id=CT_TOOL.menu;
  li.innerHTML='<a href="#"><span class="ct-bolt">'+(ctLameMode()?'':'⚡')+'</span>Cell Tech Tools <small style="font-size:10px;font-weight:700;opacity:.72;margin-left:5px;white-space:nowrap">v'+CT_VERSION+'</small> <span style="float:right">▾</span></a><ul style="display:none">'+tabs.map(t=>'<li><a href="#" data-cttool="'+t+'">'+esc(ctToolLabel(t))+'</a></li>').join('')+'</ul>';
  const anchor=[...list.children].find(x=>/search/i.test((x.textContent||'').trim()));if(anchor)list.insertBefore(li,anchor);else list.appendChild(li);
@@ -939,7 +939,7 @@ function ctCloseWorkspace(){document.getElementById(CT_TOOL.workspace)?.remove()
 function ctOpenWorkspace(tab='drop'){
  if(!ctTopWindow())return;ctToolStyles();let w=document.getElementById(CT_TOOL.workspace);if(!w){w=document.createElement('div');w.id=CT_TOOL.workspace;document.body.appendChild(w)}
  w.style.left=ctSidebarWidth()+'px';ctApplyWorkspaceTheme();
- const tabs=['drop','parts','reset','minions','reports','settings'];
+ const tabs=['drop','parts','reset','minions','info','reports','settings'];
  w.innerHTML='<div class="ctw-top"><h1>Cell Tech RepairGenie Tools <small style="font-size:14px;color:#777">v '+CT_VERSION+'</small></h1><div style="display:flex;gap:8px;align-items:center"><button id="ct_tools_lame_top" style="border:1px solid #bbb;background:'+(ctLameMode()?'#333':'#fff')+';color:'+(ctLameMode()?'#fff':'#333')+';border-radius:7px;padding:8px 12px;cursor:pointer;font-weight:700">'+(ctLameMode()?'EXIT LAME MODE':'LAME MODE')+'</button><button id="ct_tools_close" style="border:0;background:#eee;border-radius:7px;padding:8px 12px;cursor:pointer">Close</button></div></div><div class="ctw-body"><div class="ctw-tabs">'+tabs.map(t=>'<button data-tab="'+t+'">'+esc(ctToolLabel(t))+'</button>').join('')+'</div><div id="ct_tools_content"></div></div>';
  w.querySelector('#ct_tools_close').onclick=ctCloseWorkspace;
  w.querySelector('#ct_tools_lame_top').onclick=()=>ctSetLameMode(!ctLameMode());
@@ -950,7 +950,7 @@ function ctRenderToolTab(tab){
  const w=document.getElementById(CT_TOOL.workspace);if(!w)return;
  w.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
  const box=w.querySelector('#ct_tools_content');
- if(tab==='drop')ctRenderDropTool(box);else if(tab==='parts')ctRenderPartsTool(box);else if(tab==='reset')ctRenderResetTool(box);else if(tab==='minions')ctRenderMinionsTool(box);else if(tab==='reports')ctRenderReports(box);else ctRenderSettings(box)
+ if(tab==='drop')ctRenderDropTool(box);else if(tab==='parts')ctRenderPartsTool(box);else if(tab==='reset')ctRenderResetTool(box);else if(tab==='minions')ctRenderMinionsTool(box);else if(tab==='info')ctRenderInfoTool(box);else if(tab==='reports')ctRenderReports(box);else ctRenderSettings(box)
 }
 function ctRepairGenieBase(){const p=location.pathname.toLowerCase();return location.origin+(p==='/rgsite'||p.startsWith('/rgsite/')?'/rgsite':'')}
 function ctRouteUrl(path){path=String(path||'');if(/^https?:\/\//i.test(path))return path;return ctRepairGenieBase()+(path.startsWith('/')?path:'/'+path)}
@@ -1192,6 +1192,162 @@ function ctRenderMinionsTool(c){
 }
 
 function ctPartsLastResultText(){const r=ctResults();if(!r.length)return'No Parts results yet.';const x=r[r.length-1];return`Last result: ${x.Status} — ${x['Device Code']||'Unknown device'} / ${x['Part #']||'No part #'} — ${x.Reason||'No reason recorded.'}`}
+
+// ============================================================================
+// CASTLE GRAYSKULL INTEL / INFO FINDER - v2.31.2 TEST
+// Manual Workshop CSV/Excel import with adaptive column mapping for any RG site.
+// ============================================================================
+const CT_INFO_MAP_KEY=P+'info_map_v1:'+location.hostname;
+const CT_INFO_SESSION_KEY=P+'info_session_v1:'+location.hostname;
+let ctInfoRows=[],ctInfoHeaders=[],ctInfoMap={},ctInfoFile='',ctInfoLoadedAt='';
+
+const CT_INFO_FIELDS={
+ serial:{label:'Serial',aliases:['serial','serial #','serial#','serial number','serial no','serialno']},
+ asset:{label:'Asset ID',aliases:['asset','asset id','asset tag','assettag','msb','msb tag','msb_tag']},
+ approval:{label:'Approval Status',aliases:['approval','approval status','approved','non warranty approval','non-warranty approval','non warranty status','nonwarranty status']},
+ cost:{label:'Cost',aliases:['cost','price','repair cost','non warranty cost','non-warranty cost','amount']},
+ pickup:{label:'Pickup Location',aliases:['pickup','pickup location','pick up location','pickup school','pickup site','pickuploc']},
+ caseid:{label:'Case ID',aliases:['case id','caseid','case #','case number','reference','reference number','refid']},
+ device:{label:'Device Type',aliases:['device','device type','model','device model','devtype']},
+ school:{label:'School / Location',aliases:['school','home school','home school location','school location','location']},
+ status:{label:'Repair Status',aliases:['status','repair status','progress']},
+ claimtype:{label:'Claim Type',aliases:['claim type','claimtype','warranty type']},
+ incident:{label:'Incident ID',aliases:['incident','incident id','incident #','incident number','incident report','ireport']}
+};
+
+function ctInfoNorm(v){return String(v??'').trim().toLowerCase().replace(/[^a-z0-9]/g,'')}
+function ctInfoMapSaved(){try{return JSON.parse(localStorage.getItem(CT_INFO_MAP_KEY)||'{}')||{}}catch(_){return{}}}
+function ctInfoSaveMap(map){ctInfoMap={...map};localStorage.setItem(CT_INFO_MAP_KEY,JSON.stringify(ctInfoMap))}
+function ctInfoGuess(headers){
+ const norm=headers.map(h=>ctInfoNorm(h)),out={};
+ for(const [field,def] of Object.entries(CT_INFO_FIELDS)){
+  let idx=-1;
+  for(const a of def.aliases){idx=norm.findIndex(h=>h===ctInfoNorm(a));if(idx>=0)break}
+  if(idx<0){
+   for(const a of def.aliases){
+    const n=ctInfoNorm(a);idx=norm.findIndex(h=>h&&n&&(h.includes(n)||n.includes(h)));
+    if(idx>=0)break
+   }
+  }
+  if(idx>=0)out[field]=headers[idx]
+ }
+ return out
+}
+function ctInfoRestoreSession(){
+ if(ctInfoRows.length)return;
+ try{
+  const raw=sessionStorage.getItem(CT_INFO_SESSION_KEY);if(!raw)return;
+  const x=JSON.parse(raw);
+  if(Array.isArray(x.rows)&&x.rows.length){
+   ctInfoRows=x.rows;ctInfoHeaders=Array.isArray(x.headers)?x.headers:Object.keys(x.rows[0]||{});
+   ctInfoMap=x.map||ctInfoMapSaved();ctInfoFile=x.file||'';ctInfoLoadedAt=x.loadedAt||''
+  }
+ }catch(_){}
+}
+function ctInfoPersistSession(){
+ const data={rows:ctInfoRows,headers:ctInfoHeaders,map:ctInfoMap,file:ctInfoFile,loadedAt:ctInfoLoadedAt};
+ try{
+  const raw=JSON.stringify(data);
+  if(raw.length<3500000)sessionStorage.setItem(CT_INFO_SESSION_KEY,raw);
+  else sessionStorage.setItem(CT_INFO_SESSION_KEY,JSON.stringify({rows:[],headers:ctInfoHeaders,map:ctInfoMap,file:ctInfoFile,loadedAt:ctInfoLoadedAt}))
+ }catch(_){}
+}
+async function ctInfoImport(file){
+ if(!file)throw Error('Choose a Workshop CSV or Excel file first.');
+ const wb=XLSX.read(await ctFileBuffer(file),{type:'array'}),sheet=wb.Sheets[wb.SheetNames[0]];
+ const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false});
+ if(!rows.length)throw Error('No data rows were found in this file.');
+ const headers=Object.keys(rows[0]||{});
+ if(!headers.length)throw Error('Could not find column headers in this file.');
+ ctInfoRows=rows;ctInfoHeaders=headers;ctInfoFile=file.name;ctInfoLoadedAt=new Date().toISOString();
+ const guessed=ctInfoGuess(headers),saved=ctInfoMapSaved(),map={...guessed};
+ for(const [k,v] of Object.entries(saved))if(headers.includes(v))map[k]=v;
+ ctInfoMap=map;ctInfoPersistSession();
+ return rows.length
+}
+function ctInfoCell(row,field){const h=ctInfoMap[field];return h?String(row?.[h]??'').trim():''}
+function ctInfoLookup(q){
+ const n=ctInfoNorm(q);if(!n)return[];
+ const hits=[];
+ for(const row of ctInfoRows){
+  const s=ctInfoNorm(ctInfoCell(row,'serial')),a=ctInfoNorm(ctInfoCell(row,'asset')),cid=ctInfoNorm(ctInfoCell(row,'caseid'));
+  if((s&&s===n)||(a&&a===n)||(cid&&cid===n))hits.push(row)
+ }
+ return hits
+}
+function ctInfoTimeLabel(){
+ if(!ctInfoLoadedAt)return'';
+ const d=new Date(ctInfoLoadedAt);return Number.isNaN(d.getTime())?'':d.toLocaleString()
+}
+async function ctInfoExportWorkbook(){
+ if(!ctInfoRows.length)return alert('Load Workshop data first.');
+ const wb=new ExcelJS.Workbook(),imp=wb.addWorksheet('Imported Data'),finder=wb.addWorksheet('Info Finder');
+ imp.addRow(ctInfoHeaders);
+ for(const row of ctInfoRows)imp.addRow(ctInfoHeaders.map(h=>row[h]??''));
+ imp.getRow(1).font={bold:true};imp.views=[{state:'frozen',ySplit:1}];
+ imp.columns=ctInfoHeaders.map(h=>({header:h,key:h,width:Math.max(12,Math.min(30,String(h).length+4))}));
+ const fields=[['Approval Status','approval'],['Cost','cost'],['Pickup Location','pickup'],['Asset ID','asset'],['Serial','serial'],['Case ID','caseid'],['Device Type','device'],['School / Location','school'],['Repair Status','status'],['Claim Type','claimtype'],['Incident ID','incident']];
+ finder.addRow(['Scan / Enter ID',...fields.map(x=>x[0])]);finder.getRow(1).font={bold:true};finder.views=[{state:'frozen',ySplit:1}];
+ finder.getColumn(1).width=24;for(let i=2;i<=fields.length+1;i++)finder.getColumn(i).width=22;
+ const lookupField=ctInfoMap.serial?'serial':ctInfoMap.asset?'asset':ctInfoMap.caseid?'caseid':'';
+ if(!lookupField)return alert('Map Serial, Asset ID, or Case ID before exporting.');
+ const lookupHeader=ctInfoMap[lookupField],lookupIndex=ctInfoHeaders.indexOf(lookupHeader);
+ const colLetter=n=>{let s='';for(let x=n+1;x;x=Math.floor((x-1)/26))s=String.fromCharCode(65+(x-1)%26)+s;return s};
+ const lookupCol=colLetter(lookupIndex);
+ for(let r=2;r<=501;r++){
+  for(let i=0;i<fields.length;i++){
+   const header=ctInfoMap[fields[i][1]],idx=ctInfoHeaders.indexOf(header);if(idx<0)continue;
+   const outCol=colLetter(idx);
+   finder.getCell(r,i+2).value={formula:`IF(ISBLANK($A${r}),"",XLOOKUP($A${r},'Imported Data'!${lookupCol}:${lookupCol},'Imported Data'!${outCol}:${outCol},"Not Found"))`}
+  }
+ }
+ const buf=await wb.xlsx.writeBuffer();
+ ctSaveBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'RepairGenie_Info_Finder.xlsx')
+}
+function ctRenderInfoTool(box){
+ ctInfoRestoreSession();
+ const fields=Object.entries(CT_INFO_FIELDS);
+ const optionHtml=field=>'<option value="">-- Not Mapped --</option>'+ctInfoHeaders.map(h=>'<option value="'+esc(h)+'" '+(ctInfoMap[field]===h?'selected':'')+'>'+esc(h)+'</option>').join('');
+ box.innerHTML=`<div class="ctw-card">
+ <h2>${esc(ctToolLabel('info'))}</h2>
+ <div>${ctLameMode()?'Load a Workshop CSV/Excel file, map the columns, and scan a Serial, Asset ID, or Case ID for an instant lookup.':'Load the Workshop data scroll, then scan a Serial, Asset ID, or Case ID for instant intel.'}</div>
+ <div class="ctw-grid" style="margin-top:14px">
+  <div><label>Workshop CSV / Excel</label><input id="ct_info_file" type="file" accept=".csv,.xlsx,.xls,.xlsm"></div>
+  <div><label>Data Tools</label><button id="ct_info_load" style="width:100%;min-height:40px">LOAD / REFRESH DATA</button><button id="ct_info_export" style="width:100%;min-height:40px;margin-top:6px">EXPORT INFO FINDER WORKBOOK</button></div>
+ </div>
+ <div id="ct_info_status" class="ctw-status">${ctInfoRows.length?`${ctInfoRows.length.toLocaleString()} records loaded from ${esc(ctInfoFile)}${ctInfoTimeLabel()?' at '+esc(ctInfoTimeLabel()):''}.`:'No Workshop data loaded yet.'}</div>
+ <div class="ctw-card" style="margin-top:14px"><h3 style="margin-top:0">Column Mapping</h3><div class="ctw-grid">
+ ${fields.map(([k,d])=>`<div><label>${esc(d.label)}</label><select data-info-map="${k}">${optionHtml(k)}</select></div>`).join('')}
+ </div><div class="ctw-actions"><button id="ct_info_save_map">SAVE MAPPING FOR THIS RG</button></div></div>
+ <div class="ctw-card"><h3 style="margin-top:0">Scan / Lookup</h3><div class="ctw-grid"><div><label>Serial, Asset ID, or Case ID</label><input id="ct_info_scan" type="text" autocomplete="off" placeholder="Scan or type"></div><div><label>&nbsp;</label><button id="ct_info_find" class="go" style="width:100%;min-height:40px">LOOK UP</button></div></div><div id="ct_info_result" class="ctw-status">Ready for a scan.</div></div>
+ </div>`;
+ const file=box.querySelector('#ct_info_file'),status=box.querySelector('#ct_info_status'),scan=box.querySelector('#ct_info_scan'),result=box.querySelector('#ct_info_result');
+ box.querySelector('#ct_info_load').onclick=async()=>{
+  try{status.textContent='Reading Workshop data...';const n=await ctInfoImport(file.files[0]);status.textContent='Loaded '+n.toLocaleString()+' records from '+file.files[0].name+'.';ctRenderInfoTool(box)}
+  catch(e){status.textContent=e?.message||String(e)}
+ };
+ box.querySelector('#ct_info_save_map').onclick=()=>{
+  const map={};box.querySelectorAll('[data-info-map]').forEach(s=>{if(s.value)map[s.dataset.infoMap]=s.value});
+  ctInfoSaveMap(map);ctInfoPersistSession();status.textContent='Column mapping saved for '+location.hostname+'.'
+ };
+ box.querySelector('#ct_info_export').onclick=()=>ctInfoExportWorkbook().catch(e=>alert('Could not export workbook.\n\n'+(e?.message||e)));
+ const run=()=>{
+  if(!ctInfoRows.length){result.textContent='Load Workshop data first.';return}
+  if(!ctInfoMap.serial&&!ctInfoMap.asset&&!ctInfoMap.caseid){result.textContent='Map Serial, Asset ID, or Case ID first.';return}
+  const q=scan.value.trim();if(!q){result.textContent='Scan or enter a value first.';return}
+  const hits=ctInfoLookup(q);if(!hits.length){result.innerHTML='<b>Not Found</b>';return}
+  const line=(label,field,row)=>'<div><b>'+esc(label)+':</b> '+esc(ctInfoCell(row,field)||'—')+'</div>';
+  const rendered=hits.slice(0,5).map((r,i)=>'<div style="'+(i?'border-top:1px solid #ccc;margin-top:9px;padding-top:9px':'')+'">'+
+   (hits.length>1?'<div><b>Match '+(i+1)+' of '+hits.length+'</b></div>':'')+
+   line('Serial','serial',r)+line('Asset ID','asset',r)+line('Case ID','caseid',r)+line('Approval','approval',r)+line('Cost','cost',r)+line('Pickup Location','pickup',r)+line('Device','device',r)+line('School / Location','school',r)+line('Repair Status','status',r)+line('Claim Type','claimtype',r)+line('Incident ID','incident',r)+'</div>').join('');
+  result.innerHTML=rendered+(hits.length>5?'<div style="margin-top:8px">More matches exist; showing first 5.</div>':'');
+  scan.select()
+ };
+ box.querySelector('#ct_info_find').onclick=run;
+ scan.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run()}});
+ setTimeout(()=>scan.focus(),50)
+}
+
 function ctRenderReports(c){const b=latest(),s=b?summary(b):null,p=ctPartsStats(),rr=ctResetStats(),mr=ctMinionStats();c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('reports'))}</h2><div class="ctw-actions"><button id="ct_tools_last_drop">Drop / Delivery Report</button><button id="ct_tools_last_parts">Parts Report</button><button id="ct_tools_last_reset">${esc(ctActionLabel('Rewind Report','Reset Report'))}</button><button id="ct_tools_last_minions">${esc(ctActionLabel('Minions Report','Hold Release Report'))}</button>${b?'<button id="ct_tools_drop_csv">Drop CSV</button><button id="ct_tools_drop_xlsx">Drop XLSX</button>':''}${ctResults().length?'<button id="ct_tools_parts_xlsx">Parts XLSX</button>':''}${ctResetResults().length?'<button id="ct_tools_reset_xlsx">Reset XLSX</button>':''}${ctMinionResults().length?'<button id="ct_tools_minion_xlsx">Minions XLSX</button>':''}</div>${b?`<div class="ctw-status">Last Drop Batch: ${esc(b.modeName)} — ${s.complete}/${s.total} complete, ${s.failed} failed.</div>`:'<div class="ctw-status">No Drop / Delivery batch found.</div>'}<div class="ctw-status">Parts: ${p.complete}/${p.total} successful, ${p.failed} failed, ${p.partial} skipped.</div><div class="ctw-status">Rewind Battles: ${rr.success} successful, ${rr.failed} failed, ${rr.checked} checked-only.</div><div class="ctw-status">Release the Minions: ${mr.released} released, ${mr.skipped} skipped, ${mr.failed} failed.</div></div>`;c.querySelector('#ct_tools_last_drop').onclick=()=>{const x=latest();if(x)modal(x);else alert('No Drop / Delivery report found.')};c.querySelector('#ct_tools_last_parts').onclick=()=>ctPartsModal();c.querySelector('#ct_tools_last_reset').onclick=ctResetModal;c.querySelector('#ct_tools_last_minions').onclick=ctMinionReportModal;c.querySelector('#ct_tools_drop_csv')?.addEventListener('click',()=>dlCSV(latest()));c.querySelector('#ct_tools_drop_xlsx')?.addEventListener('click',()=>dlXLSX(latest()));c.querySelector('#ct_tools_parts_xlsx')?.addEventListener('click',ctDownloadPartsResults);c.querySelector('#ct_tools_reset_xlsx')?.addEventListener('click',ctDownloadResetResults);c.querySelector('#ct_tools_minion_xlsx')?.addEventListener('click',ctDownloadMinionResults)}
 function ctRenderSettings(c){
  const lame=ctLameMode();
