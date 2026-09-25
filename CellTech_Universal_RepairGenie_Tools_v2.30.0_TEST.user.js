@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.30.1
+// @version      2.30.2
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -249,7 +249,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.30.1'}catch(_){return'2.30.1'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.30.2'}catch(_){return'2.30.2'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1138,7 +1138,7 @@ function ctRenderMinionsTool(c){
 
 function ctPartsLastResultText(){const r=ctResults();if(!r.length)return'No Parts results yet.';const x=r[r.length-1];return`Last result: ${x.Status} — ${x['Device Code']||'Unknown device'} / ${x['Part #']||'No part #'} — ${x.Reason||'No reason recorded.'}`}
 function ctRenderReports(c){const b=latest(),s=b?summary(b):null,p=ctPartsStats(),rr=ctResetStats(),mr=ctMinionStats();c.innerHTML=`<div class="ctw-card"><h2>Battle Reports</h2><div class="ctw-actions"><button id="ct_tools_last_drop">Drop / Delivery Report</button><button id="ct_tools_last_parts">Parts Report</button><button id="ct_tools_last_reset">Rewind Report</button><button id="ct_tools_last_minions">Minions Report</button>${b?'<button id="ct_tools_drop_csv">Drop CSV</button><button id="ct_tools_drop_xlsx">Drop XLSX</button>':''}${ctResults().length?'<button id="ct_tools_parts_xlsx">Parts XLSX</button>':''}${ctResetResults().length?'<button id="ct_tools_reset_xlsx">Reset XLSX</button>':''}${ctMinionResults().length?'<button id="ct_tools_minion_xlsx">Minions XLSX</button>':''}</div>${b?`<div class="ctw-status">Last Drop Batch: ${esc(b.modeName)} — ${s.complete}/${s.total} complete, ${s.failed} failed.</div>`:'<div class="ctw-status">No Drop / Delivery batch found.</div>'}<div class="ctw-status">Parts: ${p.complete}/${p.total} successful, ${p.failed} failed, ${p.partial} skipped.</div><div class="ctw-status">Rewind Battles: ${rr.success} successful, ${rr.failed} failed, ${rr.checked} checked-only.</div><div class="ctw-status">Release the Minions: ${mr.released} released, ${mr.skipped} skipped, ${mr.failed} failed.</div></div>`;c.querySelector('#ct_tools_last_drop').onclick=()=>{const x=latest();if(x)modal(x);else alert('No Drop / Delivery report found.')};c.querySelector('#ct_tools_last_parts').onclick=()=>ctPartsModal();c.querySelector('#ct_tools_last_reset').onclick=ctResetModal;c.querySelector('#ct_tools_last_minions').onclick=ctMinionReportModal;c.querySelector('#ct_tools_drop_csv')?.addEventListener('click',()=>dlCSV(latest()));c.querySelector('#ct_tools_drop_xlsx')?.addEventListener('click',()=>dlXLSX(latest()));c.querySelector('#ct_tools_parts_xlsx')?.addEventListener('click',ctDownloadPartsResults);c.querySelector('#ct_tools_reset_xlsx')?.addEventListener('click',ctDownloadResetResults);c.querySelector('#ct_tools_minion_xlsx')?.addEventListener('click',ctDownloadMinionResults)}
-function ctRenderSettings(c){c.innerHTML=`<div class="ctw-card"><h2>Settings</h2><div class="ctw-grid"><div><label><input id="ct_tools_sound" type="checkbox" ${localStorage.getItem(P+'sound')==='0'?'':'checked'}> Sounds</label><button id="ct_tools_test_sound" type="button" style="margin-top:7px">TEST SOUND</button></div><div>${themeControl()}<div style="margin-top:10px"><label><input id="ct_tools_rave_reduce" type="checkbox" ${localStorage.getItem(CT_RAVE_REDUCE_KEY)==='1'?'checked':''}> Reduce Motion (Eternia After Dark)</label><label><input id="ct_tools_rave_strobe" type="checkbox" ${localStorage.getItem(CT_RAVE_STROBE_KEY)==='1'?'checked':''}> Color Strobe — stepped color jumps, no white flashes</label><label style="margin-top:8px">Rave Speed: <b id="ct_tools_rave_speed_label">${ctRaveSpeedLabel()}</b><input id="ct_tools_rave_speed" type="range" min="1" max="7" step="1" value="${ctRaveSpeed()}" style="width:100%;margin-top:5px"><small style="display:flex;justify-content:space-between"><span>Slow</span><span>Maximum</span></small></label><label><input id="ct_tools_rave_quiet" type="checkbox" ${localStorage.getItem(CT_RAVE_QUIET_KEY)==='1'?'checked':''}> Quiet Mode — no rave tab beat</label></div></div><div><label>Processing Speed</label><select id="ct_tools_speed"><option value="safe">Safe — full verification</option><option value="fast">Fast — cached forms + smart verification</option><option value="turbo">Turbo — up to 3 devices at once</option></select></div></div><div class="ctw-status"><b>Browser:</b> ${esc(ctBrowserName())}. Compatibility target: current Chrome, Edge, Firefox, and Brave with Tampermonkey. <b>Eternia After Dark:</b> animated neon colors. Optional Color Strobe uses stepped color changes with no white flashes and is off by default. Rave Speed adjusts all Eternia After Dark animation timing from Slow through Maximum. Reduce Motion stops all theme animation; Quiet Mode disables the “boots and pants” tab sound. <b>Safe:</b> sequential with API verification. <b>Fast:</b> sequential, caches forms/tokens and trusts explicit RepairGenie success responses. <b>Turbo:</b> same optimizations plus up to 3 concurrent devices. A 419 response automatically refreshes the cached CSRF token. Days in Shop remains automatic.</div></div>`;c.querySelector('#ct_tools_sound').onchange=e=>{localStorage.setItem(P+'sound',e.target.checked?'1':'0');if(e.target.checked)ctUnlockAudio()};c.querySelector('#ct_tools_test_sound').onclick=()=>{ctUnlockAudio();play(true)};const sp=c.querySelector('#ct_tools_speed');sp.value=ctSpeedMode();sp.onchange=e=>{localStorage.setItem(CT_SPEED_KEY,e.target.value);ctClearWorkflowCache()};const tp=c.querySelector('#'+P+'theme');if(tp){tp.value=getTheme();tp.onchange=e=>ctChooseTheme(e.target)};const rm=c.querySelector('#ct_tools_rave_reduce');rm.onchange=e=>{localStorage.setItem(CT_RAVE_REDUCE_KEY,e.target.checked?'1':'0');ctApplySiteTheme();ctApplyWorkspaceTheme()};const rs=c.querySelector('#ct_tools_rave_strobe');rs.onchange=e=>{if(e.target.checked){const ok=confirm('⚠️ FLASHING COLOR WARNING\n\nColor Strobe uses abrupt full-background color changes. Even though it is intentionally slow and never flashes white, it may still cause discomfort for people sensitive to flashing or rapidly changing visuals.\n\nEnable Color Strobe?');if(!ok){e.target.checked=false;return}}localStorage.setItem(CT_RAVE_STROBE_KEY,e.target.checked?'1':'0');ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};const rv=c.querySelector('#ct_tools_rave_speed'),rvl=c.querySelector('#ct_tools_rave_speed_label');rv.oninput=e=>{const n=Math.max(1,Math.min(7,Number(e.target.value)||4));localStorage.setItem(CT_RAVE_SPEED_KEY,String(n));if(rvl)rvl.textContent=ctRaveSpeedLabel(n);ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};const rq=c.querySelector('#ct_tools_rave_quiet');rq.onchange=e=>localStorage.setItem(CT_RAVE_QUIET_KEY,e.target.checked?'1':'0')}
+function ctRenderSettings(c){c.innerHTML=`<div class="ctw-card"><h2>Settings</h2><div class="ctw-grid"><div><label><input id="ct_tools_sound" type="checkbox" ${localStorage.getItem(P+'sound')==='0'?'':'checked'}> Sounds</label><button id="ct_tools_test_sound" type="button" style="margin-top:7px">TEST SOUND</button></div><div>${themeControl()}<div style="margin-top:10px"><label><input id="ct_tools_rave_reduce" type="checkbox" ${localStorage.getItem(CT_RAVE_REDUCE_KEY)==='1'?'checked':''}> Reduce Motion (Eternia After Dark)</label><label><input id="ct_tools_rave_strobe" type="checkbox" ${localStorage.getItem(CT_RAVE_STROBE_KEY)==='1'?'checked':''}> Color Strobe — stepped color jumps, no white flashes</label><label style="margin-top:8px">Rave Speed: <b id="ct_tools_rave_speed_label">${ctRaveSpeedLabel()}</b><input id="ct_tools_rave_speed" type="range" min="1" max="7" step="1" value="${ctRaveSpeed()}" style="width:100%;margin-top:5px"><small style="display:flex;justify-content:space-between"><span>Slow</span><span>Maximum</span></small></label><label><input id="ct_tools_rave_quiet" type="checkbox" ${localStorage.getItem(CT_RAVE_QUIET_KEY)==='1'?'checked':''}> Quiet Mode — no rave tab beat</label></div></div><div><label>Processing Speed</label><select id="ct_tools_speed"><option value="safe">Safe — full verification</option><option value="fast">Fast — cached forms + smart verification</option><option value="turbo">Turbo — up to 3 devices at once</option></select></div></div><div class="ctw-actions"><button id="ct_tools_reset_columns" type="button">RESET COLUMN LAYOUT FOR THIS PAGE</button></div><div class="ctw-status"><b>Custom Table Layouts:</b> On normal RepairGenie results tables, drag a column header left or right. The order is saved for this RG site and page. </div><div class="ctw-status"><b>Browser:</b> ${esc(ctBrowserName())}. Compatibility target: current Chrome, Edge, Firefox, and Brave with Tampermonkey. <b>Eternia After Dark:</b> animated neon colors. Optional Color Strobe uses stepped color changes with no white flashes and is off by default. Rave Speed adjusts all Eternia After Dark animation timing from Slow through Maximum. Reduce Motion stops all theme animation; Quiet Mode disables the “boots and pants” tab sound. <b>Safe:</b> sequential with API verification. <b>Fast:</b> sequential, caches forms/tokens and trusts explicit RepairGenie success responses. <b>Turbo:</b> same optimizations plus up to 3 concurrent devices. A 419 response automatically refreshes the cached CSRF token. Days in Shop remains automatic.</div></div>`;c.querySelector('#ct_tools_sound').onchange=e=>{localStorage.setItem(P+'sound',e.target.checked?'1':'0');if(e.target.checked)ctUnlockAudio()};c.querySelector('#ct_tools_test_sound').onclick=()=>{ctUnlockAudio();play(true)};const sp=c.querySelector('#ct_tools_speed');sp.value=ctSpeedMode();sp.onchange=e=>{localStorage.setItem(CT_SPEED_KEY,e.target.value);ctClearWorkflowCache()};const tp=c.querySelector('#'+P+'theme');if(tp){tp.value=getTheme();tp.onchange=e=>ctChooseTheme(e.target)};const rm=c.querySelector('#ct_tools_rave_reduce');rm.onchange=e=>{localStorage.setItem(CT_RAVE_REDUCE_KEY,e.target.checked?'1':'0');ctApplySiteTheme();ctApplyWorkspaceTheme()};const rs=c.querySelector('#ct_tools_rave_strobe');rs.onchange=e=>{if(e.target.checked){const ok=confirm('⚠️ FLASHING COLOR WARNING\n\nColor Strobe uses abrupt full-background color changes. Even though it is intentionally slow and never flashes white, it may still cause discomfort for people sensitive to flashing or rapidly changing visuals.\n\nEnable Color Strobe?');if(!ok){e.target.checked=false;return}}localStorage.setItem(CT_RAVE_STROBE_KEY,e.target.checked?'1':'0');ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};const rv=c.querySelector('#ct_tools_rave_speed'),rvl=c.querySelector('#ct_tools_rave_speed_label');rv.oninput=e=>{const n=Math.max(1,Math.min(7,Number(e.target.value)||4));localStorage.setItem(CT_RAVE_SPEED_KEY,String(n));if(rvl)rvl.textContent=ctRaveSpeedLabel(n);ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};const rq=c.querySelector('#ct_tools_rave_quiet');rq.onchange=e=>localStorage.setItem(CT_RAVE_QUIET_KEY,e.target.checked?'1':'0')};const rc=c.querySelector('#ct_tools_reset_columns');if(rc)rc.onclick=ctResetColumnLayoutsForPage
 function ctRefreshToolWorkspace(){
  const w=document.getElementById(CT_TOOL.workspace);if(!w)return;
  const active=w.querySelector('[data-tab].active')?.dataset.tab;
@@ -1162,6 +1162,134 @@ function ctHandleToolEvent(ev){if(ev?.type!=='finished')return;setTimeout(ctRefr
 chan?.addEventListener('message',e=>ctHandleToolEvent(e.data||{}));window.addEventListener('storage',e=>{if(e.key===P+'event'&&e.newValue)try{ctHandleToolEvent(JSON.parse(e.newValue))}catch(_){}});
 
 // ============================================================================
+// CUSTOM TABLE LAYOUTS - v2.30.2 TEST
+// Drag a normal RepairGenie results-table header left/right.
+// Layout is saved per RepairGenie hostname + page + table header signature.
+// ============================================================================
+const CT_COL_KEY='rgbp_column_layout_v1:';
+let ctColObserver=null,ctColTimer=null,ctColDrag=null;
+
+function ctColClean(v){
+ return String(v??'').replace(/▲|▼/g,'').replace(/\s+/g,' ').trim().toLowerCase()
+}
+function ctColHeaderRow(table){
+ if(table.tHead?.rows?.length)return table.tHead.rows[0];
+ return [...table.rows].find(r=>r.querySelectorAll(':scope > th').length>1)||null
+}
+function ctColCells(row){
+ return [...row.children].filter(x=>x.tagName==='TH'||x.tagName==='TD')
+}
+function ctColHeaders(table){
+ const row=ctColHeaderRow(table);return row?ctColCells(row):[]
+}
+function ctColIsSimpleTable(table){
+ if(!table||table.closest('#ct_tools_workspace,.rgbp-modal-bg'))return false;
+ const headers=ctColHeaders(table);
+ if(headers.length<2)return false;
+ const names=headers.map(h=>ctColClean(h.textContent));
+ if(names.some(x=>!x)||new Set(names).size!==names.length)return false;
+ const bodyRows=[...table.querySelectorAll(':scope > tbody > tr')];
+ if(!bodyRows.length)return false;
+ let checked=0;
+ for(const row of bodyRows.slice(0,12)){
+  const cells=ctColCells(row);
+  if(!cells.length)continue;
+  if(cells.some(x=>Number(x.colSpan||1)!==1||Number(x.rowSpan||1)!==1))return false;
+  if(cells.length!==headers.length)return false;
+  checked++;
+ }
+ return checked>0
+}
+function ctColTableId(table){
+ const headers=ctColHeaders(table).map(h=>ctColClean(h.textContent));
+ const identity=(table.id||table.getAttribute('data-table')||table.className||'table').toString().replace(/\s+/g,' ').trim();
+ return location.hostname+'|'+location.pathname+'|'+identity+'|'+headers.join('||')
+}
+function ctColStorageKey(table){return CT_COL_KEY+ctColTableId(table)}
+function ctColCurrentOrder(table){return ctColHeaders(table).map(h=>ctColClean(h.textContent))}
+function ctColApply(table,desired){
+ if(!ctColIsSimpleTable(table)||!Array.isArray(desired))return false;
+ const current=ctColCurrentOrder(table);
+ if(current.length!==desired.length)return false;
+ const indexes=desired.map(name=>current.indexOf(name));
+ if(indexes.some(i=>i<0)||new Set(indexes).size!==indexes.length)return false;
+ for(const row of table.rows){
+  const cells=ctColCells(row);
+  if(cells.length!==current.length)continue;
+  const ordered=indexes.map(i=>cells[i]);
+  ordered.forEach(cell=>row.appendChild(cell));
+ }
+ return true
+}
+function ctColSave(table){
+ try{localStorage.setItem(ctColStorageKey(table),JSON.stringify(ctColCurrentOrder(table)))}catch(_){}
+}
+function ctColRestore(table){
+ try{
+  const saved=JSON.parse(localStorage.getItem(ctColStorageKey(table))||'null');
+  if(Array.isArray(saved))ctColApply(table,saved)
+ }catch(_){}
+}
+function ctColMove(table,fromName,toName){
+ const order=ctColCurrentOrder(table),from=order.indexOf(fromName),to=order.indexOf(toName);
+ if(from<0||to<0||from===to)return;
+ const next=order.slice(),moved=next.splice(from,1)[0];
+ next.splice(to,0,moved);
+ if(ctColApply(table,next))ctColSave(table)
+}
+function ctColWire(table){
+ if(!ctColIsSimpleTable(table))return;
+ ctColRestore(table);
+ for(const h of ctColHeaders(table)){
+  if(h.dataset.ctColumnDrag==='1')continue;
+  h.dataset.ctColumnDrag='1';
+  h.draggable=true;
+  h.style.cursor='grab';
+  h.title=(h.title?h.title+' | ':'')+'Drag left or right to rearrange this column';
+  h.addEventListener('dragstart',e=>{
+   ctColDrag={table,key:ctColClean(h.textContent)};
+   h.style.opacity='.65';
+   if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',ctColDrag.key)}
+  });
+  h.addEventListener('dragover',e=>{
+   if(ctColDrag?.table===table){e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='move'}
+  });
+  h.addEventListener('drop',e=>{
+   if(ctColDrag?.table!==table)return;
+   e.preventDefault();
+   ctColMove(table,ctColDrag.key,ctColClean(h.textContent));
+   ctColDrag=null
+  });
+  h.addEventListener('dragend',()=>{
+   h.style.opacity='';
+   ctColDrag=null
+  })
+ }
+}
+function ctColScan(){document.querySelectorAll('table').forEach(ctColWire)}
+function ctInitColumnLayouts(){
+ if(!ctTopWindow())return;
+ setTimeout(ctColScan,400);
+ setTimeout(ctColScan,1200);
+ if(ctColObserver||!document.body)return;
+ ctColObserver=new MutationObserver(()=>{
+  clearTimeout(ctColTimer);
+  ctColTimer=setTimeout(ctColScan,180)
+ });
+ ctColObserver.observe(document.body,{childList:true,subtree:true})
+}
+function ctResetColumnLayoutsForPage(){
+ const prefix=CT_COL_KEY+location.hostname+'|'+location.pathname+'|';
+ let removed=0;
+ for(let i=localStorage.length-1;i>=0;i--){
+  const k=localStorage.key(i);
+  if(k?.startsWith(prefix)){localStorage.removeItem(k);removed++}
+ }
+ alert(removed?'Saved column layout cleared. Reloading RepairGenie.':'No saved column layout exists for this page.');
+ if(removed)location.reload()
+}
+
+// ============================================================================
 // DAYS IN SHOP
 // Runs automatically on /repairs and /workshop.
 // Adds Days in Shop immediately after Delivered when Picked exists and
@@ -1179,6 +1307,6 @@ function ctDayStyle(c,n){c.style.fontWeight='bold';c.style.whiteSpace='nowrap';c
 function ctUpdateDays(){if(!ctDaysPage())return;for(const table of document.querySelectorAll('table')){let hr=null,pi=-1,di=-1;for(const r of table.querySelectorAll('tr')){const c=ctTableCells(r),n=c.map(x=>ctCol(x.textContent)),p=n.indexOf('picked'),d=n.indexOf('delivered');if(p>=0&&d>=0){hr=r;pi=p;di=d;break}}if(!hr)continue;let hc=ctTableCells(hr);if(!hc.some(x=>ctCol(x.textContent)==='daysinshop')){const h=document.createElement(hc[di].tagName==='TH'?'th':'td');h.textContent='Days in Shop';h.dataset.ctDays='header';h.style.whiteSpace='nowrap';hc[di].parentNode.insertBefore(h,hc[di].nextSibling)}for(const r of table.querySelectorAll('tbody tr')){if(r.querySelector('input,select'))continue;const c=ctTableCells(r);if(c.length<=Math.max(pi,di))continue;const pc=c[pi],dc=c[di];if(!pc||!dc)continue;let age=r.querySelector('[data-ct-days="cell"]');if(!age){age=document.createElement('td');age.dataset.ctDays='cell';dc.parentNode.insertBefore(age,dc.nextSibling)}const pv=(pc.textContent||'').trim(),dv=(dc.textContent||'').trim();if(!ctBlank(dv)||ctBlank(pv)){age.textContent='';age.title='';ctDayStyle(age,0);continue}const d=ctDate(pv);if(!d){age.textContent='?';age.title='Could not read Picked date: '+pv;continue}const n=ctDays(d);age.textContent=n+' '+(n===1?'Day':'Days');age.title='Picked: '+pv;ctDayStyle(age,n)}}}
 function ctInitDays(){setTimeout(ctUpdateDays,500);setTimeout(ctUpdateDays,1500);setTimeout(ctUpdateDays,3000);if(ctDayObs)return;ctDayObs=new MutationObserver(()=>{clearTimeout(ctDayTimer);ctDayTimer=setTimeout(ctUpdateDays,300)});ctDayObs.observe(document.body,{childList:true,subtree:true})}
 document.addEventListener('click',e=>{ctRaveArmSidebarNav(e);if(e.target.closest('#ct_tools_workspace button,.rgbp button'))ctUnlockAudio()},true);
-function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();setInterval(ctRefreshToolWorkspace,1000)}
+function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();ctInitColumnLayouts();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();setInterval(ctRefreshToolWorkspace,1000)}
 ctInit();
 })();
