@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.30.5
+// @version      2.30.6
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -251,7 +251,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.30.5'}catch(_){return'2.30.5'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.30.6'}catch(_){return'2.30.6'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1164,13 +1164,13 @@ function ctHandleToolEvent(ev){if(ev?.type!=='finished')return;setTimeout(ctRefr
 chan?.addEventListener('message',e=>ctHandleToolEvent(e.data||{}));window.addEventListener('storage',e=>{if(e.key===P+'event'&&e.newValue)try{ctHandleToolEvent(JSON.parse(e.newValue))}catch(_){}});
 
 // ============================================================================
-// SEARCH LAYOUT MANAGER - v2.30.5 TEST
+// SEARCH LAYOUT MANAGER - v2.30.6 TEST
 // Purpose-built for RepairGenie's /repairs #reports table.
-// RepairGenie native columns are reordered by their stable .column-* classes.
-// Days in Shop is a Cell Tech pseudo-column and is PINNED immediately after Delivered.
+// RepairGenie native columns use stable .column-* classes.
+// Days in Shop is a first-class virtual column with its own header/filter/data cells.
 // ============================================================================
-const CT_SEARCH_LAYOUT_KEY=P+'search_layout_v2:'+location.hostname+location.pathname;
-const CT_SEARCH_DEFAULT_KEY=P+'search_layout_default_v2:'+location.hostname+location.pathname;
+const CT_SEARCH_LAYOUT_KEY=P+'search_layout_v3:'+location.hostname+location.pathname;
+const CT_SEARCH_DEFAULT_KEY=P+'search_layout_default_v3:'+location.hostname+location.pathname;
 let ctSearchObs=null,ctSearchTimer=null,ctSearchApplying=false;
 
 function ctSearchPage(){return /\/repairs\/?$/.test(location.pathname)}
@@ -1180,21 +1180,23 @@ function ctSearchFilterRow(table=ctSearchTable()){
  if(!table?.tHead)return null;
  return [...table.tHead.rows].find(r=>r.querySelector('.column-serialno,.column-MSB_Tag,.column-refid'))||null
 }
-function ctSearchNativeKey(cell){
+function ctSearchKeyFromCell(cell){
  if(!cell)return'';
+ if(cell.dataset?.ctDays==='header'||cell.dataset?.ctDays==='cell'||cell.dataset?.ctDaysFilter==='1')return'ct_days';
  const cls=[...cell.classList].find(x=>x.startsWith('column-'));
  return cls?cls.slice(7):''
 }
 function ctSearchLabel(cell,key){
+ if(key==='ct_days')return'Days in Shop';
  const clone=cell.cloneNode(true);
  clone.querySelectorAll('small,a,button,input,select').forEach(x=>x.remove());
  return (clone.textContent||key).replace(/\s+/g,' ').trim()||key
 }
-function ctSearchNativeHeaders(table=ctSearchTable()){
+function ctSearchHeaderCells(table=ctSearchTable()){
  const r=ctSearchHeaderRow(table);
- return r?[...r.children].filter(c=>(c.tagName==='TH'||c.tagName==='TD')&&ctSearchNativeKey(c)):[]
+ return r?[...r.children].filter(c=>(c.tagName==='TH'||c.tagName==='TD')&&ctSearchKeyFromCell(c)):[]
 }
-function ctSearchNativeOrder(table=ctSearchTable()){return ctSearchNativeHeaders(table).map(ctSearchNativeKey)}
+function ctSearchOrder(table=ctSearchTable()){return ctSearchHeaderCells(table).map(ctSearchKeyFromCell)}
 function ctSearchMergeOrder(wanted,current){
  const out=(Array.isArray(wanted)?wanted:[]).filter(k=>current.includes(k));
  for(const k of current)if(!out.includes(k))out.push(k);
@@ -1204,81 +1206,91 @@ function ctSearchReadOrder(){try{return JSON.parse(localStorage.getItem(CT_SEARC
 function ctSearchWriteOrder(order){localStorage.setItem(CT_SEARCH_LAYOUT_KEY,JSON.stringify(order))}
 function ctSearchReadDefault(){try{return JSON.parse(localStorage.getItem(CT_SEARCH_DEFAULT_KEY)||'null')}catch(_){return null}}
 function ctSearchWriteDefault(order){if(!localStorage.getItem(CT_SEARCH_DEFAULT_KEY))localStorage.setItem(CT_SEARCH_DEFAULT_KEY,JSON.stringify(order))}
-function ctSearchFindNativeCell(row,key){
+function ctSearchFindCell(row,key){
  if(!row)return null;
+ if(key==='ct_days')return row.querySelector('[data-ct-days="header"],[data-ct-days="cell"],[data-ct-days-filter="1"]');
  return [...row.children].find(c=>c.classList?.contains('column-'+key))||null
 }
-function ctSearchDaysCell(row){
- if(!row)return null;
- return row.querySelector('[data-ct-days="header"],[data-ct-days="cell"],[data-ct-days-filter="1"]')
+function ctSearchEnsureDaysHeader(table=ctSearchTable()){
+ const row=ctSearchHeaderRow(table);if(!row)return null;
+ let h=row.querySelector('[data-ct-days="header"]');if(h)return h;
+ const delivered=ctSearchFindCell(row,'dropped_at');if(!delivered)return null;
+ h=document.createElement('th');h.textContent='Days in Shop';h.dataset.ctDays='header';h.style.whiteSpace='nowrap';
+ delivered.parentNode.insertBefore(h,delivered.nextSibling);return h
 }
 function ctSearchEnsureDaysFilter(table=ctSearchTable()){
- if(!table)return;
- const header=ctSearchHeaderRow(table),filter=ctSearchFilterRow(table);
- if(!header||!filter||!header.querySelector('[data-ct-days="header"]'))return;
- let td=filter.querySelector('[data-ct-days-filter="1"]');
+ if(!table)return null;
+ const row=ctSearchFilterRow(table);if(!row)return null;
+ let td=row.querySelector('[data-ct-days-filter="1"]');
  if(!td){td=document.createElement('td');td.dataset.ctDaysFilter='1';td.className='ct-days-filter';td.innerHTML=''}
- const delivered=ctSearchFindNativeCell(filter,'dropped_at');
- if(delivered){
-  if(delivered.nextSibling!==td)delivered.parentNode.insertBefore(td,delivered.nextSibling)
- }else if(td.parentNode!==filter)filter.appendChild(td)
+ if(td.parentNode!==row){
+  const delivered=ctSearchFindCell(row,'dropped_at');if(delivered?.nextSibling)row.insertBefore(td,delivered.nextSibling);else row.appendChild(td)
+ }
+ return td
 }
-function ctSearchPlaceDaysAfterDelivered(row){
- const days=ctSearchDaysCell(row),delivered=ctSearchFindNativeCell(row,'dropped_at');
- if(!days||!delivered)return;
- if(delivered.nextSibling!==days)delivered.parentNode.insertBefore(days,delivered.nextSibling)
+function ctSearchEnsureDaysCells(table=ctSearchTable()){
+ if(!table)return false;
+ const header=ctSearchEnsureDaysHeader(table),filter=ctSearchEnsureDaysFilter(table);
+ if(!header||!filter)return false;
+ for(const row of table.querySelectorAll(':scope > tbody > tr')){
+  let td=row.querySelector('[data-ct-days="cell"]');
+  if(!td){
+   const delivered=ctSearchFindCell(row,'dropped_at');if(!delivered)continue;
+   td=document.createElement('td');td.dataset.ctDays='cell';delivered.parentNode.insertBefore(td,delivered.nextSibling)
+  }
+ }
+ return true
+}
+function ctSearchValidateRows(order,table=ctSearchTable()){
+ if(!table||!Array.isArray(order)||!order.length)return false;
+ const hr=ctSearchHeaderRow(table),fr=ctSearchFilterRow(table);if(!hr||!fr)return false;
+ if(order.some(k=>!ctSearchFindCell(hr,k)))return false;
+ if(order.some(k=>!ctSearchFindCell(fr,k)))return false;
+ for(const row of table.querySelectorAll(':scope > tbody > tr')){
+  if(order.some(k=>!ctSearchFindCell(row,k)))return false
+ }
+ return true
 }
 function ctSearchSyncColspans(table=ctSearchTable()){
  if(!table)return;
- const nativeCount=ctSearchNativeHeaders(table).length;
- const days=ctSearchHeaderRow(table)?.querySelector('[data-ct-days="header"]')?1:0;
- const count=nativeCount+days;if(!count)return;
+ const count=ctSearchHeaderCells(table).length;if(!count)return;
  table.querySelectorAll('thead td[colspan],tfoot td[colspan]').forEach(td=>td.colSpan=count)
 }
-function ctSearchApplyRow(row,nativeOrder){
+function ctSearchApplyRow(row,order){
  if(!row)return false;
- const nativeCells=nativeOrder.map(k=>ctSearchFindNativeCell(row,k));
- const present=nativeCells.filter(Boolean);
- const rowNative=[...row.children].filter(c=>ctSearchNativeKey(c));
- if(!rowNative.length)return false;
- if(rowNative.length!==present.length)return false;
- // Rebuild using only RepairGenie's native cells first.
- present.forEach(cell=>row.appendChild(cell));
- // Cell Tech's Days in Shop is intentionally pinned after Delivered.
- ctSearchPlaceDaysAfterDelivered(row);
+ const cells=order.map(k=>ctSearchFindCell(row,k));
+ if(cells.some(x=>!x))return false;
+ cells.forEach(cell=>row.appendChild(cell));
  return true
 }
 function ctSearchApplyOrder(order,table=ctSearchTable()){
  if(!table||ctSearchApplying)return false;
- const current=ctSearchNativeOrder(table);if(!current.length)return false;
+ if(!ctSearchEnsureDaysCells(table))return false;
+ const current=ctSearchOrder(table);if(!current.length)return false;
  const merged=ctSearchMergeOrder(order,current);
  if(merged.length!==current.length)return false;
+ if(!ctSearchValidateRows(merged,table)){
+  console.warn('Cell Tech Search Layout: table structure changed; custom layout not applied.');
+  return false
+ }
  ctSearchApplying=true;
  try{
   const hr=ctSearchHeaderRow(table),fr=ctSearchFilterRow(table);
-  ctSearchEnsureDaysFilter(table);
   ctSearchApplyRow(hr,merged);
-  if(fr&&fr!==hr)ctSearchApplyRow(fr,merged);
+  ctSearchApplyRow(fr,merged);
   table.querySelectorAll(':scope > tbody > tr').forEach(r=>ctSearchApplyRow(r,merged));
-  ctSearchPlaceDaysAfterDelivered(hr);
-  ctSearchPlaceDaysAfterDelivered(fr);
   ctSearchSyncColspans(table);
   return true
  }finally{ctSearchApplying=false}
 }
 function ctSearchRefresh(){
  const table=ctSearchTable();if(!table)return;
- ctSearchEnsureDaysFilter(table);
- const current=ctSearchNativeOrder(table);if(!current.length)return;
+ if(!ctSearchEnsureDaysCells(table))return;
+ const current=ctSearchOrder(table);if(!current.length)return;
  ctSearchWriteDefault(current);
  const saved=ctSearchReadOrder();
  if(saved)ctSearchApplyOrder(saved,table);
- else{
-  const hr=ctSearchHeaderRow(table),fr=ctSearchFilterRow(table);
-  ctSearchPlaceDaysAfterDelivered(hr);ctSearchPlaceDaysAfterDelivered(fr);
-  table.querySelectorAll(':scope > tbody > tr').forEach(ctSearchPlaceDaysAfterDelivered);
-  ctSearchSyncColspans(table)
- }
+ ctSearchSyncColspans(table);
  ctSearchAddLayoutButton(table)
 }
 function ctSearchCloseLayout(){document.getElementById('ct_search_layout_backdrop')?.remove()}
@@ -1289,13 +1301,13 @@ function ctSearchMoveItem(li,dir){
 }
 function ctSearchOpenLayout(){
  ctSearchCloseLayout();const table=ctSearchTable();if(!table)return;
- ctSearchEnsureDaysFilter(table);
- const cells=ctSearchNativeHeaders(table),byKey=new Map(cells.map(c=>[ctSearchNativeKey(c),c]));
- const current=ctSearchNativeOrder(table);
+ if(!ctSearchEnsureDaysCells(table))return alert('Could not prepare the Search table layout safely.');
+ const cells=ctSearchHeaderCells(table),byKey=new Map(cells.map(c=>[ctSearchKeyFromCell(c),c]));
+ const current=ctSearchOrder(table);
  const backdrop=document.createElement('div');backdrop.id='ct_search_layout_backdrop';
  backdrop.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:45px 18px;overflow:auto';
  const panel=document.createElement('div');panel.style.cssText='width:min(720px,96vw);background:#fff;color:#222;border-radius:12px;box-shadow:0 18px 55px #0008;padding:18px;font-family:Arial,sans-serif';
- panel.innerHTML='<div style="display:flex;justify-content:space-between;gap:15px;align-items:center"><div><h2 style="margin:0 0 4px">Search Column Layout</h2><div style="color:#666">Drag RepairGenie columns or use the arrows. <b>Days in Shop stays pinned immediately after Delivered</b> so headers, filters, and results cannot drift out of alignment.</div></div><button id="ct_search_layout_x" class="btn btn-default">Close</button></div><div id="ct_search_layout_list" style="margin-top:14px;display:grid;gap:6px"></div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px"><button id="ct_search_layout_save" class="btn btn-success">Save & Apply</button><button id="ct_search_layout_visibility" class="btn btn-default">Show / Hide Columns</button><button id="ct_search_layout_reset" class="btn btn-warning">Reset RG Order</button><button id="ct_search_layout_cancel" class="btn btn-default">Cancel</button></div><div style="margin-top:10px;color:#777;font-size:12px">Saved for '+esc(location.hostname)+' '+esc(location.pathname)+'. RepairGenie sorting, filters, pagination, CSV export, and its native Columns menu remain untouched.</div>';
+ panel.innerHTML='<div style="display:flex;justify-content:space-between;gap:15px;align-items:center"><div><h2 style="margin:0 0 4px">Search Column Layout</h2><div style="color:#666">Drag any column, including <b>Days in Shop</b>, or use the arrows. The header, filter row, and every result row move together.</div></div><button id="ct_search_layout_x" class="btn btn-default">Close</button></div><div id="ct_search_layout_list" style="margin-top:14px;display:grid;gap:6px"></div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px"><button id="ct_search_layout_save" class="btn btn-success">Save & Apply</button><button id="ct_search_layout_visibility" class="btn btn-default">Show / Hide Columns</button><button id="ct_search_layout_reset" class="btn btn-warning">Reset RG Order</button><button id="ct_search_layout_cancel" class="btn btn-default">Cancel</button></div><div style="margin-top:10px;color:#777;font-size:12px">Saved for '+esc(location.hostname)+' '+esc(location.pathname)+'. RepairGenie sorting, filters, pagination, CSV export, and its native Columns menu remain untouched.</div>';
  backdrop.appendChild(panel);document.body.appendChild(backdrop);
  const list=panel.querySelector('#ct_search_layout_list');let dragKey='';
  for(const key of current){
@@ -1314,8 +1326,14 @@ function ctSearchOpenLayout(){
  const readList=()=>[...list.children].map(x=>x.dataset.key);
  panel.querySelector('#ct_search_layout_x').onclick=ctSearchCloseLayout;
  panel.querySelector('#ct_search_layout_cancel').onclick=ctSearchCloseLayout;
- panel.querySelector('#ct_search_layout_save').onclick=()=>{const order=readList();ctSearchWriteOrder(order);ctSearchApplyOrder(order,table);ctSearchCloseLayout()};
- panel.querySelector('#ct_search_layout_reset').onclick=()=>{const def=ctSearchReadDefault()||current;localStorage.removeItem(CT_SEARCH_LAYOUT_KEY);ctSearchApplyOrder(def,table);ctSearchCloseLayout()};
+ panel.querySelector('#ct_search_layout_save').onclick=()=>{
+  const order=readList();
+  if(!ctSearchValidateRows(order,table))return alert('RepairGenie changed the table structure, so this layout was not applied.');
+  ctSearchWriteOrder(order);ctSearchApplyOrder(order,table);ctSearchCloseLayout()
+ };
+ panel.querySelector('#ct_search_layout_reset').onclick=()=>{
+  const def=ctSearchReadDefault()||current;localStorage.removeItem(CT_SEARCH_LAYOUT_KEY);ctSearchApplyOrder(def,table);ctSearchCloseLayout()
+ };
  panel.querySelector('#ct_search_layout_visibility').onclick=()=>{ctSearchCloseLayout();document.getElementById('reports-columns_hider-btn')?.click()};
  backdrop.addEventListener('click',e=>{if(e.target===backdrop)ctSearchCloseLayout()})
 }
@@ -1357,28 +1375,18 @@ function ctDayStyle(c,n){c.style.fontWeight='bold';c.style.whiteSpace='nowrap';c
 function ctUpdateDays(){
  if(!ctDaysPage())return;
  for(const table of document.querySelectorAll('table')){
-  // Search page: use RepairGenie's stable column classes, never numeric indexes.
   if(ctSearchPage()&&table.id==='reports'){
-   const hr=ctSearchHeaderRow(table);if(!hr)continue;
-   let h=hr.querySelector('[data-ct-days="header"]');
-   const hd=ctSearchFindNativeCell(hr,'dropped_at');
-   if(!h&&hd){h=document.createElement('th');h.textContent='Days in Shop';h.dataset.ctDays='header';h.style.whiteSpace='nowrap';hd.parentNode.insertBefore(h,hd.nextSibling)}
-   ctSearchEnsureDaysFilter(table);
+   if(!ctSearchEnsureDaysCells(table))continue;
    for(const r of table.querySelectorAll(':scope > tbody > tr')){
-    const pc=ctSearchFindNativeCell(r,'picked_at'),dc=ctSearchFindNativeCell(r,'dropped_at');
-    if(!pc||!dc)continue;
-    let age=r.querySelector('[data-ct-days="cell"]');
-    if(!age){age=document.createElement('td');age.dataset.ctDays='cell';dc.parentNode.insertBefore(age,dc.nextSibling)}
-    else if(dc.nextSibling!==age)dc.parentNode.insertBefore(age,dc.nextSibling);
+    const pc=ctSearchFindCell(r,'picked_at'),dc=ctSearchFindCell(r,'dropped_at'),age=ctSearchFindCell(r,'ct_days');
+    if(!pc||!dc||!age)continue;
     const pv=(pc.textContent||'').trim(),dv=(dc.textContent||'').trim();
     if(!ctBlank(dv)||ctBlank(pv)){age.textContent='';age.title='';ctDayStyle(age,0);continue}
     const d=ctDate(pv);if(!d){age.textContent='?';age.title='Could not read Picked date: '+pv;continue}
     const n=ctDays(d);age.textContent=n+' '+(n===1?'Day':'Days');age.title='Picked: '+pv;ctDayStyle(age,n)
    }
-   setTimeout(ctSearchRefresh,0);
-   continue
+   setTimeout(ctSearchRefresh,0);continue
   }
-  // Other RepairGenie tables keep the original generic Days in Shop logic.
   let hr=null,pi=-1,di=-1;
   for(const r of table.querySelectorAll('tr')){
    const cells=ctTableCells(r),names=cells.map(x=>ctCol(x.textContent)),p=names.indexOf('picked'),d=names.indexOf('delivered');
