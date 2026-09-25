@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.30.7
+// @version      2.30.8
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -251,7 +251,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.30.7'}catch(_){return'2.30.7'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.30.8'}catch(_){return'2.30.8'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1396,7 +1396,7 @@ function ctUpdateDays(){
     const pc=ctSearchFindCell(r,'picked_at'),dc=ctSearchFindCell(r,'dropped_at'),age=ctSearchFindCell(r,'ct_days');
     if(!pc||!dc||!age)continue;
     const pv=(pc.textContent||'').trim(),dv=(dc.textContent||'').trim();
-    if(!ctBlank(dv)||ctBlank(pv)){age.textContent='';age.title='';ctDayStyle(age,0);continue}
+    if(!ctBlank(dv)||ctBlank(pv)){age.textContent='—';age.title=!ctBlank(dv)?'Device has been delivered.':'No Picked date available.';ctDayStyle(age,0);continue}
     const d=ctDate(pv);if(!d){age.textContent='?';age.title='Could not read Picked date: '+pv;continue}
     const n=ctDays(d);age.textContent=n+' '+(n===1?'Day':'Days');age.title='Picked: '+pv;ctDayStyle(age,n)
    }
@@ -1419,7 +1419,7 @@ function ctUpdateDays(){
    let age=r.querySelector('[data-ct-days="cell"]');
    if(!age){age=document.createElement('td');age.dataset.ctDays='cell';dc.parentNode.insertBefore(age,dc.nextSibling)}
    const pv=(pc.textContent||'').trim(),dv=(dc.textContent||'').trim();
-   if(!ctBlank(dv)||ctBlank(pv)){age.textContent='';age.title='';ctDayStyle(age,0);continue}
+   if(!ctBlank(dv)||ctBlank(pv)){age.textContent='—';age.title=!ctBlank(dv)?'Device has been delivered.':'No Picked date available.';ctDayStyle(age,0);continue}
    const d=ctDate(pv);if(!d){age.textContent='?';age.title='Could not read Picked date: '+pv;continue}
    const n=ctDays(d);age.textContent=n+' '+(n===1?'Day':'Days');age.title='Picked: '+pv;ctDayStyle(age,n)
   }
