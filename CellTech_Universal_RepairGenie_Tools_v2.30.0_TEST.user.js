@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.0
+// @version      2.31.1
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -11,6 +11,8 @@
 // @downloadURL  https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools_v2.30.0_TEST.user.js
 
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @connect      workshop.repairgenie.net
 // @require      https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js
 // @require      https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js
@@ -19,8 +21,13 @@
 (function(){
 'use strict';
 const P='rgbp_', B='rgbp_batch_', LAST='rgbp_last_'+location.hostname;
-const CT_LAME_KEY=P+'lame_mode';
-function ctLameMode(){return localStorage.getItem(CT_LAME_KEY)==='1'}
+const CT_LAME_KEY=P+'lame_mode',CT_LAME_GLOBAL_KEY='celltech_lame_mode_global';
+function ctLameMode(){
+ try{
+  if(typeof GM_getValue==='function')return GM_getValue(CT_LAME_GLOBAL_KEY,false)===true;
+ }catch(_){}
+ return localStorage.getItem(CT_LAME_KEY)==='1'
+}
 function ctStoredTheme(){return localStorage.getItem(P+'theme')||'purple'}
 function ctToolLabel(tab){
  const fun={drop:'Power Processor',parts:'Parts Forge',reset:'Rewind the Battle',minions:'Release the Minions',reports:'Battle Reports',settings:'Settings'};
@@ -29,7 +36,9 @@ function ctToolLabel(tab){
 }
 function ctActionLabel(fun,plain){return ctLameMode()?plain:fun}
 function ctSetLameMode(on){
- localStorage.setItem(CT_LAME_KEY,on?'1':'0');
+ const value=!!on;
+ try{if(typeof GM_setValue==='function')GM_setValue(CT_LAME_GLOBAL_KEY,value)}catch(_){}
+ localStorage.setItem(CT_LAME_KEY,value?'1':'0');
  ctApplySiteTheme();
  applyTheme(document.getElementById('ct_parts_panel'));
  document.getElementById(CT_TOOL?.menu||'ct_tools_menu')?.remove();
@@ -269,7 +278,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.0'}catch(_){return'2.31.0'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.1'}catch(_){return'2.31.1'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1187,11 +1196,11 @@ function ctRenderReports(c){const b=latest(),s=b?summary(b):null,p=ctPartsStats(
 function ctRenderSettings(c){
  const lame=ctLameMode();
  c.innerHTML=`<div class="ctw-card"><h2>Settings</h2><div class="ctw-grid">
- <div><label>Interface Mode</label><button id="ct_tools_lame_settings" type="button" style="width:100%;min-height:42px;font-weight:800">${lame?'EXIT LAME MODE':'TURN ON LAME MODE'}</button><div class="ctw-status" style="margin-top:8px">Lame Mode keeps all tools and processing functions, but turns off Cell Tech themes, animations, sound effects, and themed tool names. Your normal settings are preserved for when you turn it back off.</div></div>
+ <div><label>Interface Mode</label><button id="ct_tools_lame_settings" type="button" style="width:100%;min-height:42px;font-weight:800">${lame?'EXIT LAME MODE':'TURN ON LAME MODE'}</button><div class="ctw-status" style="margin-top:8px">Lame Mode keeps all tools and processing functions, but turns off Cell Tech themes, animations, sound effects, and themed tool names. It applies across all RepairGenie sites in Tampermonkey. Your normal per-site theme settings are preserved for when you turn it back off.</div></div>
  <div><label><input id="ct_tools_sound" type="checkbox" ${localStorage.getItem(P+'sound')==='0'?'':'checked'} ${lame?'disabled':''}> Sounds</label><button id="ct_tools_test_sound" type="button" style="margin-top:7px" ${lame?'disabled':''}>TEST SOUND</button></div>
  <div>${themeControl()}<div style="margin-top:10px"><label><input id="ct_tools_rave_reduce" type="checkbox" ${localStorage.getItem(CT_RAVE_REDUCE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Reduce Motion (Eternia After Dark)</label><label><input id="ct_tools_rave_strobe" type="checkbox" ${localStorage.getItem(CT_RAVE_STROBE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Color Strobe — stepped color jumps, no white flashes</label><label style="margin-top:8px">Rave Speed: <b id="ct_tools_rave_speed_label">${ctRaveSpeedLabel()}</b><input id="ct_tools_rave_speed" type="range" min="1" max="7" step="1" value="${ctRaveSpeed()}" style="width:100%;margin-top:5px" ${lame?'disabled':''}><small style="display:flex;justify-content:space-between"><span>Slow</span><span>Maximum</span></small></label><label><input id="ct_tools_rave_quiet" type="checkbox" ${localStorage.getItem(CT_RAVE_QUIET_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Quiet Mode — no rave tab beat</label></div></div>
  <div><label>Processing Speed</label><select id="ct_tools_speed"><option value="safe">Safe — full verification</option><option value="fast">Fast — cached forms + smart verification</option><option value="turbo">Turbo — up to 3 devices at once</option></select></div>
- </div><div class="ctw-status"><b>Browser:</b> ${esc(ctBrowserName())}. Compatibility target: current Chrome, Edge, Firefox, and Brave with Tampermonkey. <b>Lame Mode:</b> presentation-only; processing behavior does not change. <b>Safe:</b> sequential with API verification. <b>Fast:</b> sequential, caches forms/tokens and trusts explicit RepairGenie success responses. <b>Turbo:</b> same optimizations plus up to 3 concurrent devices. Days in Shop and saved table layouts remain active in either mode.</div></div>`;
+ </div><div class="ctw-status"><b>Browser:</b> ${esc(ctBrowserName())}. Compatibility target: current Chrome, Edge, Firefox, and Brave with Tampermonkey. <b>Lame Mode:</b> presentation-only, shared across all RepairGenie sites; processing behavior does not change. <b>Safe:</b> sequential with API verification. <b>Fast:</b> sequential, caches forms/tokens and trusts explicit RepairGenie success responses. <b>Turbo:</b> same optimizations plus up to 3 concurrent devices. Days in Shop and saved table layouts remain active in either mode.</div></div>`;
  c.querySelector('#ct_tools_lame_settings').onclick=()=>ctSetLameMode(!ctLameMode());
  const sound=c.querySelector('#ct_tools_sound');sound.onchange=e=>{localStorage.setItem(P+'sound',e.target.checked?'1':'0');if(e.target.checked&&!ctLameMode())ctUnlockAudio()};
  c.querySelector('#ct_tools_test_sound').onclick=()=>{if(!ctLameMode()){ctUnlockAudio();play(true)}};
