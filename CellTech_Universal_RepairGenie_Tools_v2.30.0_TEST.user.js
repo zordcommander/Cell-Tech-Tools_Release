@@ -2,12 +2,12 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.8
+// @version      2.31.9
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
 
-// @updateURL    https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.user.js
+// @updateURL    https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.meta.js
 // @downloadURL  https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.user.js
 
 // @grant        GM_xmlhttpRequest
@@ -897,8 +897,7 @@ html[data-ct-site-theme="rave"] .panel-default,
 html[data-ct-site-theme="rave"] .well,
 html[data-ct-site-theme="rave"] .jumbotron,
 html[data-ct-site-theme="rave"] .card,
-html[data-ct-site-theme="rave"] .modal-content,
-html[data-ct-site-theme="rave"] .dropdown-menu{
+html[data-ct-site-theme="rave"] .modal-content,html[data-ct-site-theme="rave"] .dropdown-menu{
   background:rgba(13,10,28,.82)!important;
   color:#fff!important;
   border-color:rgba(102,235,255,.45)!important;
@@ -998,7 +997,8 @@ function ctInitThemeRecovery(){
    const bodyTheme=document.body?.dataset?.ctSiteTheme||'';
    if((t==='off'&&(htmlTheme||bodyTheme))||(t!=='off'&&(htmlTheme!==t||bodyTheme!==t))||!document.getElementById('ct_site_theme_styles'))ctScheduleThemeRecovery(25);
   });
-  ctThemeRootObserver.observe(document.documentElement,{childList:true}); }
+  ctThemeRootObserver.observe(document.documentElement,{childList:true});
+ }
 }
 function ctAddSideMenu(){
  if(!ctTopWindow()||document.getElementById(CT_TOOL.menu))return;
@@ -1440,44 +1440,16 @@ function ctRenderInfoTool(box){
 }
 
 function ctRenderReports(c){const b=latest(),s=b?summary(b):null,p=ctPartsStats(),rr=ctResetStats(),mr=ctMinionStats();c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('reports'))}</h2><div class="ctw-actions"><button id="ct_tools_last_drop">Drop / Delivery Report</button><button id="ct_tools_last_parts">Parts Report</button><button id="ct_tools_last_reset">${esc(ctActionLabel('Rewind Report','Reset Report'))}</button><button id="ct_tools_last_minions">${esc(ctActionLabel('Minions Report','Hold Release Report'))}</button>${b?'<button id="ct_tools_drop_csv">Drop CSV</button><button id="ct_tools_drop_xlsx">Drop XLSX</button>':''}${ctResults().length?'<button id="ct_tools_parts_xlsx">Parts XLSX</button>':''}${ctResetResults().length?'<button id="ct_tools_reset_xlsx">Reset XLSX</button>':''}${ctMinionResults().length?'<button id="ct_tools_minion_xlsx">Minions XLSX</button>':''}</div>${b?`<div class="ctw-status">Last Drop Batch: ${esc(b.modeName)} — ${s.complete}/${s.total} complete, ${s.failed} failed.</div>`:'<div class="ctw-status">No Drop / Delivery batch found.</div>'}<div class="ctw-status">Parts: ${p.complete}/${p.total} successful, ${p.failed} failed, ${p.partial} skipped.</div><div class="ctw-status">Rewind Battles: ${rr.success} successful, ${rr.failed} failed, ${rr.checked} checked-only.</div><div class="ctw-status">Release the Minions: ${mr.released} released, ${mr.skipped} skipped, ${mr.failed} failed.</div></div>`;c.querySelector('#ct_tools_last_drop').onclick=()=>{const x=latest();if(x)modal(x);else alert('No Drop / Delivery report found.')};c.querySelector('#ct_tools_last_parts').onclick=()=>ctPartsModal();c.querySelector('#ct_tools_last_reset').onclick=ctResetModal;c.querySelector('#ct_tools_last_minions').onclick=ctMinionReportModal;c.querySelector('#ct_tools_drop_csv')?.addEventListener('click',()=>dlCSV(latest()));c.querySelector('#ct_tools_drop_xlsx')?.addEventListener('click',()=>dlXLSX(latest()));c.querySelector('#ct_tools_parts_xlsx')?.addEventListener('click',ctDownloadPartsResults);c.querySelector('#ct_tools_reset_xlsx')?.addEventListener('click',ctDownloadResetResults);c.querySelector('#ct_tools_minion_xlsx')?.addEventListener('click',ctDownloadMinionResults)}
-
-const CT_UPDATE_URL='https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.user.js';
-function ctInstalledVersion(){
- try{return String((typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.8')}catch(_){return'2.31.8'}
-}
+const CT_UPDATE_META_URL='https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.meta.js';
+const CT_UPDATE_SCRIPT_URL='https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.user.js';
+function ctInstalledVersion(){try{return String((typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.9')}catch(_){return'2.31.9'}}
 function ctVersionParts(v){return String(v||'0').split(/[.-]/).map(x=>{const n=parseInt(x,10);return Number.isFinite(n)?n:0})}
-function ctVersionCompare(a,b){
- const A=ctVersionParts(a),B=ctVersionParts(b),n=Math.max(A.length,B.length);
- for(let i=0;i<n;i++){const x=A[i]||0,y=B[i]||0;if(x>y)return 1;if(x<y)return-1}
- return 0
-}
-function ctUpdateRequest(url){
- return new Promise((resolve,reject)=>{
-  const bust=url+(url.includes('?')?'&':'?')+'ctupdate='+Date.now();
-  if(CT_GM_XHR){
-   try{
-    CT_GM_XHR({method:'GET',url:bust,headers:{'Cache-Control':'no-cache','Pragma':'no-cache'},
-     onload:r=>{if(r.status>=200&&r.status<300)resolve(String(r.responseText||''));else reject(Error('GitHub returned HTTP '+r.status))},
-     onerror:()=>reject(Error('Could not reach GitHub.')),ontimeout:()=>reject(Error('GitHub update check timed out.')),timeout:15000});
-    return
-   }catch(e){reject(e);return}
-  }
-  fetch(bust,{cache:'no-store',redirect:'follow'}).then(r=>{if(!r.ok)throw Error('GitHub returned HTTP '+r.status);return r.text()}).then(resolve,reject)
- })
-}
-async function ctCheckForUpdate(){
- const text=await ctUpdateRequest(CT_UPDATE_URL);
- const m=text.match(/^\/\/\s*@version\s+([^\s]+)\s*$/m);
- if(!m)throw Error('Could not read the published version from GitHub.');
- const current=ctInstalledVersion(),latest=String(m[1]).trim();
- return{current,latest,available:ctVersionCompare(latest,current)>0,url:CT_UPDATE_URL}
-}
-function ctLaunchUpdate(){
- const u=CT_UPDATE_URL+(CT_UPDATE_URL.includes('?')?'&':'?')+'install='+Date.now();
- const w=window.open(u,'_blank');
- if(!w)location.href=u
-}
-
+function ctVersionCompare(a,b){const A=ctVersionParts(a),B=ctVersionParts(b),n=Math.max(A.length,B.length);for(let i=0;i<n;i++){const x=A[i]||0,y=B[i]||0;if(x!==y)return x>y?1:-1}return 0}
+function ctUpdateRequest(url){return new Promise((resolve,reject)=>{const bust=url+(url.includes('?')?'&':'?')+'ctupdate='+Date.now();if(CT_GM_XHR){try{CT_GM_XHR({method:'GET',url:bust,headers:{'Cache-Control':'no-cache','Pragma':'no-cache'},timeout:15000,onload:r=>r.status>=200&&r.status<300?resolve(String(r.responseText||'')):reject(Error('GitHub returned HTTP '+r.status)),onerror:()=>reject(Error('Could not reach GitHub.')),ontimeout:()=>reject(Error('GitHub update check timed out.'))});return}catch(e){reject(e);return}}fetch(bust,{cache:'no-store',redirect:'follow'}).then(r=>{if(!r.ok)throw Error('GitHub returned HTTP '+r.status);return r.text()}).then(resolve,reject)})}
+async function ctCheckForUpdate(){const text=await ctUpdateRequest(CT_UPDATE_META_URL),m=text.match(/^\/\/\s*@version\s+([^\s]+)\s*$/m);if(!m)throw Error('Could not read the published version from GitHub.');const current=ctInstalledVersion(),latest=String(m[1]).trim();return{current,latest,available:ctVersionCompare(latest,current)>0}}
+function ctLaunchUpdate(){const u=CT_UPDATE_SCRIPT_URL+(CT_UPDATE_SCRIPT_URL.includes('?')?'&':'?')+'install='+Date.now();const w=window.open(u,'_blank');if(!w)location.href=u}
+function ctSettingsUpdateCard(){return `<div><label>Cell Tech Tools Update</label><div id="ct_tools_update_status" class="ctw-status" style="margin:0 0 8px 0">Installed: v${esc(ctInstalledVersion())}. Checking GitHub…</div><button id="ct_tools_update_check" type="button" style="width:100%;min-height:42px;font-weight:800">CHECK FOR UPDATE</button><button id="ct_tools_update_now" type="button" class="go" style="width:100%;min-height:42px;font-weight:900;margin-top:7px;display:none">UPDATE NOW</button><small style="display:block;margin-top:7px">Checks the permanent Cell Tech GitHub release. Update Now opens the official userscript so Tampermonkey can install it.</small></div>`}
+function ctBindUpdater(c){const st=c.querySelector('#ct_tools_update_status'),check=c.querySelector('#ct_tools_update_check'),install=c.querySelector('#ct_tools_update_now');if(!st||!check||!install)return;const run=async()=>{check.disabled=true;install.style.display='none';st.textContent='Checking GitHub for the latest Cell Tech Tools version…';try{const u=await ctCheckForUpdate();if(u.available){st.innerHTML='<b>Update available:</b> v'+esc(u.current)+' → <b>v'+esc(u.latest)+'</b>';install.style.display='block'}else st.innerHTML='<b>Up to date.</b> Installed v'+esc(u.current)+' — GitHub v'+esc(u.latest)+'.'}catch(e){st.textContent='Update check failed: '+(e?.message||String(e))}finally{check.disabled=false}};check.onclick=run;install.onclick=ctLaunchUpdate;setTimeout(run,150)}
 function ctRenderSettings(c){
  const lame=ctLameMode();
  c.innerHTML=`<div class="ctw-card"><h2>Settings</h2><div class="ctw-grid">
@@ -1485,29 +1457,18 @@ function ctRenderSettings(c){
  <div><label><input id="ct_tools_sound" type="checkbox" ${localStorage.getItem(P+'sound')==='0'?'':'checked'} ${lame?'disabled':''}> Sounds</label><button id="ct_tools_test_sound" type="button" style="margin-top:7px" ${lame?'disabled':''}>TEST SOUND</button></div>
  <div>${themeControl()}<div style="margin-top:10px"><label><input id="ct_tools_rave_reduce" type="checkbox" ${localStorage.getItem(CT_RAVE_REDUCE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Reduce Motion (Eternia After Dark)</label><label><input id="ct_tools_rave_strobe" type="checkbox" ${localStorage.getItem(CT_RAVE_STROBE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Color Strobe — stepped color jumps, no white flashes</label><label style="margin-top:8px">Rave Speed: <b id="ct_tools_rave_speed_label">${ctRaveSpeedLabel()}</b><input id="ct_tools_rave_speed" type="range" min="1" max="7" step="1" value="${ctRaveSpeed()}" style="width:100%;margin-top:5px" ${lame?'disabled':''}><small style="display:flex;justify-content:space-between"><span>Slow</span><span>Maximum</span></small></label><label><input id="ct_tools_rave_quiet" type="checkbox" ${localStorage.getItem(CT_RAVE_QUIET_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Quiet Mode — no rave tab beat</label></div></div>
  <div><label>Processing Speed</label><select id="ct_tools_speed"><option value="safe">Safe — full verification</option><option value="fast">Fast — cached forms + smart verification</option><option value="turbo">Turbo — up to 3 devices at once</option></select></div>
- <div><label>Cell Tech Tools Update</label><div id="ct_tools_update_status" class="ctw-status" style="margin:0 0 8px 0">Installed: v${esc(ctInstalledVersion())}. Checking GitHub…</div><button id="ct_tools_update_check" type="button" style="width:100%;min-height:42px;font-weight:800">CHECK FOR UPDATE</button><button id="ct_tools_update_now" type="button" class="go" style="width:100%;min-height:42px;font-weight:900;margin-top:7px;display:none">UPDATE NOW</button><small style="display:block;margin-top:7px">Update Now opens the official Cell Tech Tools userscript. Tampermonkey may show its normal security confirmation before installing the update.</small></div>
+ ${ctSettingsUpdateCard()}
  </div><div class="ctw-status"><b>Browser:</b> ${esc(ctBrowserName())}. Compatibility target: current Chrome, Edge, Firefox, and Brave with Tampermonkey. <b>Lame Mode:</b> presentation-only, shared across all RepairGenie sites; processing behavior does not change. <b>Safe:</b> sequential with API verification. <b>Fast:</b> sequential, caches forms/tokens and trusts explicit RepairGenie success responses. <b>Turbo:</b> same optimizations plus up to 3 concurrent devices. Days in Shop and saved table layouts remain active in either mode.</div></div>`;
  c.querySelector('#ct_tools_lame_settings').onclick=()=>ctSetLameMode(!ctLameMode());
  const sound=c.querySelector('#ct_tools_sound');sound.onchange=e=>{localStorage.setItem(P+'sound',e.target.checked?'1':'0');if(e.target.checked&&!ctLameMode())ctUnlockAudio()};
  c.querySelector('#ct_tools_test_sound').onclick=()=>{if(!ctLameMode()){ctUnlockAudio();play(true)}};
  const sp=c.querySelector('#ct_tools_speed');sp.value=ctSpeedMode();sp.onchange=e=>{localStorage.setItem(CT_SPEED_KEY,e.target.value);ctClearWorkflowCache()};
- const upStatus=c.querySelector('#ct_tools_update_status'),upCheck=c.querySelector('#ct_tools_update_check'),upNow=c.querySelector('#ct_tools_update_now');
- const runUpdateCheck=async()=>{
-  upCheck.disabled=true;upStatus.textContent='Checking GitHub for the latest Cell Tech Tools version…';upNow.style.display='none';
-  try{
-   const u=await ctCheckForUpdate();
-   if(u.available){upStatus.innerHTML='<b>Update available:</b> v'+esc(u.current)+' → <b>v'+esc(u.latest)+'</b>';upNow.style.display='block'}
-   else upStatus.innerHTML='<b>Up to date.</b> Installed v'+esc(u.current)+' — GitHub v'+esc(u.latest)+'.'
-  }catch(e){upStatus.textContent='Update check failed: '+(e?.message||String(e))}
-  finally{upCheck.disabled=false}
- };
- upCheck.onclick=runUpdateCheck;upNow.onclick=ctLaunchUpdate;setTimeout(runUpdateCheck,150);
-
  const tp=c.querySelector('#'+P+'theme');if(tp){tp.value=ctStoredTheme();tp.disabled=lame;tp.onchange=e=>ctChooseTheme(e.target)};
  const rm=c.querySelector('#ct_tools_rave_reduce');rm.onchange=e=>{localStorage.setItem(CT_RAVE_REDUCE_KEY,e.target.checked?'1':'0');ctApplySiteTheme();ctApplyWorkspaceTheme()};
  const rs=c.querySelector('#ct_tools_rave_strobe');rs.onchange=e=>{if(e.target.checked){const ok=confirm('⚠️ FLASHING COLOR WARNING\n\nColor Strobe uses abrupt full-background color changes. Even though it is intentionally slow and never flashes white, it may still cause discomfort for people sensitive to flashing or rapidly changing visuals.\n\nEnable Color Strobe?');if(!ok){e.target.checked=false;return}}localStorage.setItem(CT_RAVE_STROBE_KEY,e.target.checked?'1':'0');ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};
  const rv=c.querySelector('#ct_tools_rave_speed'),rvl=c.querySelector('#ct_tools_rave_speed_label');rv.oninput=e=>{const n=Math.max(1,Math.min(7,Number(e.target.value)||4));localStorage.setItem(CT_RAVE_SPEED_KEY,String(n));if(rvl)rvl.textContent=ctRaveSpeedLabel(n);ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};
- const rq=c.querySelector('#ct_tools_rave_quiet');rq.onchange=e=>localStorage.setItem(CT_RAVE_QUIET_KEY,e.target.checked?'1':'0')
+ const rq=c.querySelector('#ct_tools_rave_quiet');rq.onchange=e=>localStorage.setItem(CT_RAVE_QUIET_KEY,e.target.checked?'1':'0');
+ ctBindUpdater(c)
 }
 function ctRefreshToolWorkspace(){
  const w=document.getElementById(CT_TOOL.workspace);if(!w)return;
