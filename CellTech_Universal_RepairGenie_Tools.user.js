@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.12
+// @version      2.31.13
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -663,7 +663,7 @@ function ctToolStyles(){if(document.getElementById('ct_tools_style'))return;cons
 #${CT_TOOL.workspace} .ctw-actions .go{background:#5b3a96;color:#fff}.ctw-actions .warn{background:#e5ae23;color:#3f2b00}.ctw-actions .bad{background:#c62828;color:#fff}
 #${CT_TOOL.workspace} .ctw-status{margin-top:12px;padding:10px;border-radius:8px;background:#f2eef9;border:1px solid #ddd;color:#4d3f63;font-weight:700;white-space:pre-wrap}
 #${CT_TOOL.workspace} .ctw-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px}.ctw-stat{background:#fafafa;border:1px solid #ddd;border-radius:8px;text-align:center;padding:9px}.ctw-stat b{display:block;font-size:21px;color:#4b2e83}
-.ct-tools-fallback{position:fixed;left:0;top:45%;z-index:99989;background:#5b3a96;color:#fff;border:0;border-radius:0 8px 8px 0;padding:12px 9px;font-weight:800;cursor:pointer;writing-mode:vertical-rl}
+.ct-tools-fallback{position:fixed;left:0;top:45%;z-index:99989;display:flex;flex-direction:column;align-items:stretch;background:#5b3a96;color:#fff;border-radius:0 8px 8px 0;overflow:hidden;box-shadow:0 2px 8px #0003}.ct-tools-fallback button{background:transparent;color:#fff;border:0;font-weight:800;cursor:pointer;font-family:inherit}.ct-tools-fallback-open{padding:12px 9px;writing-mode:vertical-rl}.ct-tools-fallback-min{padding:5px 7px;font-size:16px;line-height:1}.ct-tools-fallback.is-min{top:auto;bottom:16px}.ct-tools-fallback.is-min .ct-tools-fallback-open{display:none}.ct-tools-fallback.is-min .ct-tools-fallback-min{padding:10px 8px;font-size:18px}
 
 /* Cell Tech Tools workspace themes */
 #${CT_TOOL.workspace}[data-theme="purple"]{background:linear-gradient(135deg,#faf7ff 0%,#eee6fb 100%)}
@@ -1014,11 +1014,26 @@ function ctInitThemeRecovery(){
   ctThemeRootObserver.observe(document.documentElement,{childList:true});
  }
 }
+function ctFallbackMinimized(){return localStorage.getItem(P+'fallback_min')==='1'}
+function ctSetFallbackMinimized(on){
+ localStorage.setItem(P+'fallback_min',on?'1':'0');
+ const el=document.getElementById('ct_tools_fallback');if(!el)return;
+ el.classList.toggle('is-min',!!on);
+ const min=el.querySelector('.ct-tools-fallback-min');
+ if(min){min.textContent=on?'›':'–';min.title=on?'Show Cell Tech Tools':'Minimize Cell Tech Tools'}
+}
 function ctAddSideMenu(){
  if(!ctTopWindow()||document.getElementById(CT_TOOL.menu))return;
  ctToolStyles();const list=ctSidebarList();
  if(!list){
-  if(!document.getElementById('ct_tools_fallback')){const b=document.createElement('button');b.id='ct_tools_fallback';b.className='ct-tools-fallback';b.textContent='Cell Tech Tools v'+CT_VERSION;b.onclick=()=>ctOpenWorkspace('drop');document.body.appendChild(b)}
+  if(!document.getElementById('ct_tools_fallback')){
+   const minOn=ctFallbackMinimized();
+   const b=document.createElement('div');b.id='ct_tools_fallback';b.className='ct-tools-fallback'+(minOn?' is-min':'');
+   b.innerHTML='<button type="button" class="ct-tools-fallback-min" title="'+(minOn?'Show Cell Tech Tools':'Minimize Cell Tech Tools')+'">'+(minOn?'›':'–')+'</button><button type="button" class="ct-tools-fallback-open">Cell Tech Tools v'+CT_VERSION+'</button>';
+   b.querySelector('.ct-tools-fallback-open').onclick=()=>ctOpenWorkspace('drop');
+   b.querySelector('.ct-tools-fallback-min').onclick=e=>{e.preventDefault();e.stopPropagation();ctSetFallbackMinimized(!ctFallbackMinimized())};
+   document.body.appendChild(b)
+  }
   return
  }
  const tabs=['drop','parts','reset','minions','info','reports','settings'];
