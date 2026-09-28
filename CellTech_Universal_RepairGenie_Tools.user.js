@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.11
+// @version      2.31.12
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -922,6 +922,14 @@ html[data-ct-site-theme="rave"] table th{background:#34234a!important;color:#fff
 html[data-ct-site-theme="rave"] table td{background:#181329!important;color:#fff!important;border-color:#4f435e!important}
 html[data-ct-site-theme="rave"] table tbody tr:nth-child(odd)>td{background:#211936!important}
 html[data-ct-site-theme="rave"] table tbody tr:hover>td{background:#3b2b50!important;color:#fff!important}
+/* Search-table lettering. RepairGenie's #reports rules beat the generic theme
+   highlight selectors, so a filter match or tinted row could use a light text
+   color on a light fill. Lock the search table to the theme text color, then
+   put dark letters on the match itself. Green QC marks stay green. */
+html[data-ct-site-theme] table#reports tbody td,html[data-ct-site-theme] table#reports tbody td a,html[data-ct-site-theme] table#reports tbody td span,html[data-ct-site-theme] table#reports tbody td font,html[data-ct-site-theme] table#reports tbody td b,html[data-ct-site-theme] table#reports tbody td strong,html[data-ct-site-theme] table#reports tbody td em,html[data-ct-site-theme] table#reports tbody tr:hover>td,html[data-ct-site-theme] table#reports tbody tr:hover>td a{color:var(--ct-text)!important;-webkit-text-fill-color:var(--ct-text)!important}
+html[data-ct-site-theme] table#reports tbody mark,html[data-ct-site-theme] table#reports tbody .highlight,html[data-ct-site-theme] table#reports tbody [class*="highlight"],html[data-ct-site-theme] table#reports tbody [class*="Highlight"],html[data-ct-site-theme] table#reports tbody td.highlight,html[data-ct-site-theme] table#reports tbody tr.highlight>td{background-color:#ffe56a!important;color:#241c12!important;-webkit-text-fill-color:#241c12!important}
+html[data-ct-site-theme] table#reports tbody td span[style*="background"]:not([style*="green" i]):not([style*="008000" i]):not([style*="008001" i]):not([style*="00ff00" i]):not([style*="0, 128, 0" i]):not([style*="0,128,0" i]),html[data-ct-site-theme] table#reports tbody td font[style*="background"]:not([style*="green" i]):not([style*="008000" i]):not([style*="008001" i]):not([style*="00ff00" i]):not([style*="0, 128, 0" i]):not([style*="0,128,0" i]),html[data-ct-site-theme] table#reports tbody td a[style*="background"]:not([style*="green" i]):not([style*="008000" i]):not([style*="008001" i]):not([style*="00ff00" i]):not([style*="0, 128, 0" i]):not([style*="0,128,0" i]){color:#241c12!important;-webkit-text-fill-color:#241c12!important}
+html[data-ct-site-theme] table#reports .text-success,html[data-ct-site-theme] table#reports .bg-success,html[data-ct-site-theme] table#reports tr.success>td,html[data-ct-site-theme] table#reports td.success,html[data-ct-site-theme] table#reports [style*="color: green" i],html[data-ct-site-theme] table#reports [style*="color:green" i],html[data-ct-site-theme] table#reports [style*="color:#008000" i],html[data-ct-site-theme] table#reports [style*="color: #008000" i],html[data-ct-site-theme] table#reports [style*="color:rgb(0, 128, 0)" i],html[data-ct-site-theme] table#reports [style*="color:rgb(0,128,0)" i]{color:#008000!important;-webkit-text-fill-color:#008000!important}
 /* Rave readability: keep motion in the chrome/background, not in text users must read. */
 html[data-ct-site-theme="rave"] h1,
 html[data-ct-site-theme="rave"] h2,
