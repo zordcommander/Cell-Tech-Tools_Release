@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.10
+// @version      2.31.11
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -1026,7 +1026,7 @@ function ctOpenWorkspace(tab='drop'){
  if(!ctTopWindow())return;ctToolStyles();let w=document.getElementById(CT_TOOL.workspace);if(!w){w=document.createElement('div');w.id=CT_TOOL.workspace;document.body.appendChild(w)}
  w.style.left=ctSidebarWidth()+'px';ctApplyWorkspaceTheme();
  const tabs=['drop','parts','reset','minions','info','reports','settings'];
- w.innerHTML='<div class="ctw-top"><h1>Cell Tech RepairGenie Tools <small style="font-size:14px;color:#777">v '+CT_VERSION+'</small></h1><div style="display:flex;gap:8px;align-items:center"><button id="ct_tools_lame_top" style="border:1px solid #bbb;background:'+(ctLameMode()?'#333':'#fff')+';color:'+(ctLameMode()?'#fff':'#333')+';border-radius:7px;padding:8px 12px;cursor:pointer;font-weight:700">'+(ctLameMode()?'EXIT LAME MODE':'LAME MODE')+'</button><button id="ct_tools_close" style="border:0;background:#eee;border-radius:7px;padding:8px 12px;cursor:pointer">Close</button></div></div><div class="ctw-body"><div class="ctw-tabs">'+tabs.map(t=>'<button data-tab="'+t+'">'+esc(ctToolLabel(t))+'</button>').join('')+'</div><div id="ct_tools_content"></div></div>';
+ w.innerHTML='<div class="ctw-top"><h1>Cell Tech RepairGenie Tools <small style="font-size:14px;color:#777">v '+CT_VERSION+'</small></h1><div style="display:flex;gap:8px;align-items:center"><button id="ct_tools_lame_top" style="border:1px solid #bbb;background:'+(ctLameMode()?'#333':'#fff')+';color:'+(ctLameMode()?'#fff':'#333')+';border-radius:7px;padding:8px 12px;cursor:pointer;font-weight:700">'+(ctLameMode()?'FUN MODE':'LAME MODE')+'</button><button id="ct_tools_close" style="border:0;background:#eee;border-radius:7px;padding:8px 12px;cursor:pointer">Close</button></div></div><div class="ctw-body"><div class="ctw-tabs">'+tabs.map(t=>'<button data-tab="'+t+'">'+esc(ctToolLabel(t))+'</button>').join('')+'</div><div id="ct_tools_content"></div></div>';
  w.querySelector('#ct_tools_close').onclick=ctCloseWorkspace;
  w.querySelector('#ct_tools_lame_top').onclick=()=>ctSetLameMode(!ctLameMode());
  w.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ctRaveTabSound();ctRenderToolTab(b.dataset.tab)});
@@ -1459,7 +1459,7 @@ function ctBindUpdater(c){const st=c.querySelector('#ct_tools_update_status'),ch
 function ctRenderSettings(c){
  const lame=ctLameMode();
  c.innerHTML=`<div class="ctw-card"><h2>Settings</h2><div class="ctw-grid">
- <div><label>Interface Mode</label><button id="ct_tools_lame_settings" type="button" style="width:100%;min-height:42px;font-weight:800">${lame?'EXIT LAME MODE':'TURN ON LAME MODE'}</button><div class="ctw-status" style="margin-top:8px">Lame Mode keeps all tools and processing functions, but turns off Cell Tech themes, animations, sound effects, and themed tool names. It applies across all RepairGenie sites in Tampermonkey. Your normal per-site theme settings are preserved for when you turn it back off.</div></div>
+ <div><label>Interface Mode</label><button id="ct_tools_lame_settings" type="button" style="width:100%;min-height:42px;font-weight:800">${lame?'TURN ON FUN MODE':'TURN ON LAME MODE'}</button><div class="ctw-status" style="margin-top:8px">Lame Mode keeps all tools and processing functions, but turns off Cell Tech themes, animations, sound effects, and themed tool names. It applies across all RepairGenie sites in Tampermonkey. Your normal per-site theme settings are preserved for when you turn it back off.</div></div>
  <div><label><input id="ct_tools_sound" type="checkbox" ${localStorage.getItem(P+'sound')==='0'?'':'checked'} ${lame?'disabled':''}> Sounds</label><button id="ct_tools_test_sound" type="button" style="margin-top:7px" ${lame?'disabled':''}>TEST SOUND</button></div>
  <div>${themeControl()}<div style="margin-top:10px"><label><input id="ct_tools_rave_reduce" type="checkbox" ${localStorage.getItem(CT_RAVE_REDUCE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Reduce Motion (Eternia After Dark)</label><label><input id="ct_tools_rave_strobe" type="checkbox" ${localStorage.getItem(CT_RAVE_STROBE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Color Strobe — stepped color jumps, no white flashes</label><label style="margin-top:8px">Rave Speed: <b id="ct_tools_rave_speed_label">${ctRaveSpeedLabel()}</b><input id="ct_tools_rave_speed" type="range" min="1" max="7" step="1" value="${ctRaveSpeed()}" style="width:100%;margin-top:5px" ${lame?'disabled':''}><small style="display:flex;justify-content:space-between"><span>Slow</span><span>Maximum</span></small></label><label><input id="ct_tools_rave_quiet" type="checkbox" ${localStorage.getItem(CT_RAVE_QUIET_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Quiet Mode — no rave tab beat</label></div></div>
  <div><label>Processing Speed</label><select id="ct_tools_speed"><option value="safe">Safe — full verification</option><option value="fast">Fast — cached forms + smart verification</option><option value="turbo">Turbo — up to 3 devices at once</option></select></div>
