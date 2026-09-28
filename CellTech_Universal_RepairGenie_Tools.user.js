@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.9
+// @version      2.31.10
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -800,6 +800,12 @@ html[data-ct-site-theme] table th{background:var(--ct-surface2)!important;color:
 html[data-ct-site-theme] table td{background:var(--ct-surface)!important;color:var(--ct-text)!important;border-color:var(--ct-border)!important}
 html[data-ct-site-theme] table tbody tr:nth-child(odd)>td{background:var(--ct-row)!important}
 html[data-ct-site-theme] table tbody tr:hover>td{background:var(--ct-surface2)!important}
+/* Search-filter highlights and selected text must stay readable. Theme link/text
+   colors were matching the highlight fill, so the letters disappeared. */
+html[data-ct-site-theme] ::selection,html[data-ct-site-theme] input::selection,html[data-ct-site-theme] textarea::selection{background:#4b2e83!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
+html[data-ct-site-theme] table mark,html[data-ct-site-theme] table .highlight,html[data-ct-site-theme] table .search-highlight,html[data-ct-site-theme] table .bg-yellow,html[data-ct-site-theme] table td.highlight,html[data-ct-site-theme] table tr.highlight>td{background-color:#ffe56a!important;color:#241c12!important;-webkit-text-fill-color:#241c12!important}
+html[data-ct-site-theme] table td span[style*="background"],html[data-ct-site-theme] table td font[style*="background"],html[data-ct-site-theme] table a span[style*="background"],html[data-ct-site-theme] table a[style*="background"]{color:#241c12!important;-webkit-text-fill-color:#241c12!important}
+html[data-ct-site-theme] table td.highlight a,html[data-ct-site-theme] table tr.highlight>td a,html[data-ct-site-theme] table mark a,html[data-ct-site-theme] table .highlight a{color:#241c12!important;-webkit-text-fill-color:#241c12!important}
 html[data-ct-site-theme] input,html[data-ct-site-theme] select,html[data-ct-site-theme] textarea,html[data-ct-site-theme] .form-control{background:var(--ct-input)!important;color:var(--ct-inputtext)!important;border-color:var(--ct-border)!important}
 html[data-ct-site-theme] input::placeholder,html[data-ct-site-theme] textarea::placeholder{color:var(--ct-muted)!important}
 html[data-ct-site-theme] h1,html[data-ct-site-theme] h2,html[data-ct-site-theme] h3,html[data-ct-site-theme] h4,html[data-ct-site-theme] h5,html[data-ct-site-theme] h6,html[data-ct-site-theme] label,html[data-ct-site-theme] .control-label{color:var(--ct-text)!important}
