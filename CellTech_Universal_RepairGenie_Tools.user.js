@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.14
+// @version      2.31.15
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -311,7 +311,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.4'}catch(_){return'2.31.4'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.15'}catch(_){return'2.31.15'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1471,7 +1471,7 @@ function ctRenderInfoTool(box){
 function ctRenderReports(c){const b=latest(),s=b?summary(b):null,p=ctPartsStats(),rr=ctResetStats(),mr=ctMinionStats();c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('reports'))}</h2><div class="ctw-actions"><button id="ct_tools_last_drop">Drop / Delivery Report</button><button id="ct_tools_last_parts">Parts Report</button><button id="ct_tools_last_reset">${esc(ctActionLabel('Rewind Report','Reset Report'))}</button><button id="ct_tools_last_minions">${esc(ctActionLabel('Minions Report','Hold Release Report'))}</button>${b?'<button id="ct_tools_drop_csv">Drop CSV</button><button id="ct_tools_drop_xlsx">Drop XLSX</button>':''}${ctResults().length?'<button id="ct_tools_parts_xlsx">Parts XLSX</button>':''}${ctResetResults().length?'<button id="ct_tools_reset_xlsx">Reset XLSX</button>':''}${ctMinionResults().length?'<button id="ct_tools_minion_xlsx">Minions XLSX</button>':''}</div>${b?`<div class="ctw-status">Last Drop Batch: ${esc(b.modeName)} — ${s.complete}/${s.total} complete, ${s.failed} failed.</div>`:'<div class="ctw-status">No Drop / Delivery batch found.</div>'}<div class="ctw-status">Parts: ${p.complete}/${p.total} successful, ${p.failed} failed, ${p.partial} skipped.</div><div class="ctw-status">Rewind Battles: ${rr.success} successful, ${rr.failed} failed, ${rr.checked} checked-only.</div><div class="ctw-status">Release the Minions: ${mr.released} released, ${mr.skipped} skipped, ${mr.failed} failed.</div></div>`;c.querySelector('#ct_tools_last_drop').onclick=()=>{const x=latest();if(x)modal(x);else alert('No Drop / Delivery report found.')};c.querySelector('#ct_tools_last_parts').onclick=()=>ctPartsModal();c.querySelector('#ct_tools_last_reset').onclick=ctResetModal;c.querySelector('#ct_tools_last_minions').onclick=ctMinionReportModal;c.querySelector('#ct_tools_drop_csv')?.addEventListener('click',()=>dlCSV(latest()));c.querySelector('#ct_tools_drop_xlsx')?.addEventListener('click',()=>dlXLSX(latest()));c.querySelector('#ct_tools_parts_xlsx')?.addEventListener('click',ctDownloadPartsResults);c.querySelector('#ct_tools_reset_xlsx')?.addEventListener('click',ctDownloadResetResults);c.querySelector('#ct_tools_minion_xlsx')?.addEventListener('click',ctDownloadMinionResults)}
 const CT_UPDATE_META_URL='https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.meta.js';
 const CT_UPDATE_SCRIPT_URL='https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.user.js';
-function ctInstalledVersion(){try{return String((typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.9')}catch(_){return'2.31.9'}}
+function ctInstalledVersion(){try{return String((typeof GM_info!=='undefined'&&GM_info?.script?.version)||CT_VERSION)}catch(_){return CT_VERSION}}
 function ctVersionParts(v){return String(v||'0').split(/[.-]/).map(x=>{const n=parseInt(x,10);return Number.isFinite(n)?n:0})}
 function ctVersionCompare(a,b){const A=ctVersionParts(a),B=ctVersionParts(b),n=Math.max(A.length,B.length);for(let i=0;i<n;i++){const x=A[i]||0,y=B[i]||0;if(x!==y)return x>y?1:-1}return 0}
 function ctUpdateRequest(url){return new Promise((resolve,reject)=>{const bust=url+(url.includes('?')?'&':'?')+'ctupdate='+Date.now();if(CT_GM_XHR){try{CT_GM_XHR({method:'GET',url:bust,headers:{'Cache-Control':'no-cache','Pragma':'no-cache'},timeout:15000,onload:r=>r.status>=200&&r.status<300?resolve(String(r.responseText||'')):reject(Error('GitHub returned HTTP '+r.status)),onerror:()=>reject(Error('Could not reach GitHub.')),ontimeout:()=>reject(Error('GitHub update check timed out.'))});return}catch(e){reject(e);return}}fetch(bust,{cache:'no-store',redirect:'follow'}).then(r=>{if(!r.ok)throw Error('GitHub returned HTTP '+r.status);return r.text()}).then(resolve,reject)})}
