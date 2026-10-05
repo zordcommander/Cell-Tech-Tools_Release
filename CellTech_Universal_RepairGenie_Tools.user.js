@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.16
+// @version      2.31.17
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -311,7 +311,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.16'}catch(_){return'2.31.16'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.17'}catch(_){return'2.31.17'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1524,10 +1524,12 @@ function ctHandleToolEvent(ev){if(ev?.type!=='finished')return;setTimeout(ctRefr
 chan?.addEventListener('message',e=>ctHandleToolEvent(e.data||{}));window.addEventListener('storage',e=>{if(e.key===P+'event'&&e.newValue)try{ctHandleToolEvent(JSON.parse(e.newValue))}catch(_){}});
 
 // ============================================================================
-// SEARCH LAYOUT MANAGER - v2.30.6 TEST
+// SEARCH LAYOUT MANAGER - v2.31.17 TEST
 // Purpose-built for RepairGenie's /repairs #reports table.
 // RepairGenie native columns use stable .column-* classes.
 // Days in Shop is a first-class virtual column with its own header/filter/data cells.
+// v2.31.17: do not re-appendChild filter cells when order is already correct; skip apply
+// while filter inputs are focused; Days age paints no longer force a full layout refresh.
 // ============================================================================
 const CT_SEARCH_LAYOUT_KEY=P+'search_layout_v5:'+location.hostname+location.pathname;
 const CT_SEARCH_DEFAULT_KEY=P+'search_layout_default_v5:'+location.hostname+location.pathname;
@@ -1614,16 +1616,20 @@ function ctSearchEnsureDaysFilter(table=ctSearchTable()){
 }
 function ctSearchEnsureDaysCells(table=ctSearchTable()){
  if(!table)return false;ctSearchDedupDays(table);
+ const hadHeader=!!ctSearchHeaderRow(table)?.querySelector('[data-ct-days="header"]');
+ const hadFilter=!!ctSearchFilterRow(table)?.querySelector('[data-ct-days-filter="1"]');
  const header=ctSearchEnsureDaysHeader(table),filter=ctSearchEnsureDaysFilter(table);
  if(!header||!filter)return false;
+ let changed=!hadHeader||!hadFilter;
  for(const row of table.querySelectorAll(':scope > tbody > tr')){
   let td=row.querySelector('[data-ct-days="cell"]');
   if(!td){
    const delivered=ctSearchFindCell(row,'dropped_at');if(!delivered)continue;
-   td=document.createElement('td');td.dataset.ctDays='cell';delivered.parentNode.insertBefore(td,delivered.nextSibling)
+   td=document.createElement('td');td.dataset.ctDays='cell';delivered.parentNode.insertBefore(td,delivered.nextSibling);
+   changed=true
   }
  }
- return true
+ return changed?'changed':true
 }
 function ctSearchValidateRows(order,table=ctSearchTable()){
  if(!table||!Array.isArray(order)||!order.length)return false;
@@ -1640,15 +1646,23 @@ function ctSearchSyncColspans(table=ctSearchTable()){
  const count=ctSearchHeaderCells(table).length;if(!count)return;
  table.querySelectorAll('thead td[colspan],tfoot td[colspan]').forEach(td=>td.colSpan=count)
 }
+function ctSearchFilterEditing(table=ctSearchTable()){
+ const el=document.activeElement;
+ if(!el||!table||!el.matches?.('input,select,textarea'))return false;
+ return table.contains(el)
+}
 function ctSearchApplyRow(row,order){
  if(!row)return false;
  const cells=order.map(k=>ctSearchFindCell(row,k));
  if(cells.some(x=>!x))return false;
+ // Already in the target order: do not appendChild (that blurs focused filter inputs).
+ if(cells.every((cell,i)=>row.children[i]===cell))return true;
  cells.forEach(cell=>row.appendChild(cell));
  return true
 }
 function ctSearchApplyOrder(order,table=ctSearchTable()){
  if(!table||ctSearchApplying)return false;
+ if(ctSearchFilterEditing(table))return false;
  if(!ctSearchEnsureDaysCells(table))return false;
  const current=ctSearchOrder(table);if(!current.length)return false;
  const merged=ctSearchMergeOrder(order,current);
@@ -1768,7 +1782,9 @@ function ctUpdateDays(){
  if(!ctDaysPage())return;
  for(const table of document.querySelectorAll('table')){
   if(table.id==='reports'&&ctSearchPage()){
-   ctSearchDedupDays(table);if(!ctSearchEnsureDaysCells(table))continue;
+   ctSearchDedupDays(table);
+   const daysReady=ctSearchEnsureDaysCells(table);
+   if(!daysReady)continue;
    for(const r of table.querySelectorAll(':scope > tbody > tr')){
     const pc=ctSearchFindCell(r,'picked_at'),dc=ctSearchFindCell(r,'dropped_at'),age=ctSearchFindCell(r,'ct_days');
     if(!pc||!dc||!age)continue;
@@ -1777,7 +1793,9 @@ function ctUpdateDays(){
     const d=ctDate(pv);if(!d){age.textContent='?';age.title='Could not read Picked date: '+pv;continue}
     const n=ctDays(d);age.textContent=n+' '+(n===1?'Day':'Days');age.title='Picked: '+pv;ctDayStyle(age,n)
    }
-   setTimeout(ctSearchRefresh,0);continue
+   // Only re-apply column layout when Days cells were newly inserted — not on every age text paint.
+   if(daysReady==='changed')setTimeout(ctSearchRefresh,0);
+   continue
   }
   let hr=null,pi=-1,di=-1;
   for(const r of table.querySelectorAll('tr')){
