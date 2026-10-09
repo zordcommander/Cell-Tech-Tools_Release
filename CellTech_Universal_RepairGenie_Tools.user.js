@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.18
+// @version      2.31.23
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -96,7 +96,56 @@ function normalize(v){return String(v??'').trim().replace(/\s+/g,'')}
 function isHeader(v){return ['asset','asset id','assetid','asset #','serial','serial #','serial number','serialnumber','sn'].includes(String(v||'').trim().toLowerCase())}
 function uniq(a){const s=new Set(),o=[];for(const x of a){const v=normalize(x);if(!v||isHeader(v))continue;const k=v.toUpperCase();if(!s.has(k)){s.add(k);o.push(v)}}return o}
 function parseCSV(t){return uniq(t.split(/\r?\n/).map(x=>x.split(',')[0].replace(/^"|"$/g,'')))}
+function ctParseCsvLine(line){
+ const out=[];let cur='',q=false;
+ for(let i=0;i<String(line||'').length;i++){
+  const c=line[i];
+  if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q;continue}
+  if(c===','&&!q){out.push(cur);cur='';continue}
+  cur+=c
+ }
+ out.push(cur);return out
+}
+function ctNormLocKey(v){return String(v??'').trim().replace(/\s+/g,' ').toLowerCase()}
+function ctIsDropSheetHeader(a,b){
+ const A=ctNormLocKey(a),B=ctNormLocKey(b);
+ const assetH=['asset','asset id','assetid','asset #','serial','serial #','serial number','serialnumber','sn','asset/serial'];
+ const locH=['location','deliver location','delivery location','drop location','school','school name','site','deliver to'];
+ return assetH.includes(A)||locH.includes(B)||(assetH.includes(A)&&(!B||locH.includes(B)))
+}
+function ctPairsFromGrid(grid){
+ const pairs=[];const seen=new Set();
+ let start=0;
+ if(grid.length&&ctIsDropSheetHeader(grid[0][0],grid[0][1]))start=1;
+ for(let i=start;i<grid.length;i++){
+  const asset=normalize(grid[i][0]);
+  if(!asset||isHeader(asset))continue;
+  const key=asset.toUpperCase();
+  if(seen.has(key))continue;
+  seen.add(key);
+  pairs.push({asset,requested:String(grid[i][1]??'').trim().replace(/\s+/g,' ')})
+ }
+ return pairs
+}
 async function readFile(f){const e=(f.name.split('.').pop()||'').toLowerCase();if(e==='csv'||e==='txt')return parseCSV(await ctFileText(f));if(['xlsx','xlsm','xls'].includes(e)){const wb=XLSX.read(await ctFileBuffer(f),{type:'array'}),ws=wb.Sheets[wb.SheetNames[0]],rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});return uniq(rows.map(r=>r[0]))}throw Error('Use CSV, XLSX, XLSM, XLS, or TXT.')}
+async function readDropFile(f){
+ const e=(f.name.split('.').pop()||'').toLowerCase();
+ let grid=[];
+ if(e==='csv'||e==='txt'){
+  grid=(await ctFileText(f)).split(/\r?\n/).filter(l=>String(l).trim()).map(l=>{const c=ctParseCsvLine(l);return [c[0]||'',c[1]||'']});
+ }else if(['xlsx','xlsm','xls'].includes(e)){
+  const wb=XLSX.read(await ctFileBuffer(f),{type:'array'}),ws=wb.Sheets[wb.SheetNames[0]];
+  grid=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''}).map(r=>[r[0]??'',r[1]??'']);
+ }else throw Error('Use CSV, XLSX, XLSM, XLS, or TXT.');
+ const pairs=ctPairsFromGrid(grid);
+ if(!pairs.length)throw Error('No Asset IDs / serials found in Column A.');
+ const perRow=pairs.some(p=>p.requested);
+ return {
+  perRow,
+  rows:pairs.map(p=>({asset:p.asset,requested:p.requested,sch:'',locationName:'',deliveryUrl:'',matchStatus:perRow?(p.requested?'pending':'blank'):'legacy',skipped:false,candidates:[]})),
+  assets:pairs.map(p=>p.asset)
+ }
+}
 function save(b){b.updatedAt=new Date().toISOString();localStorage.setItem(B+b.id,JSON.stringify(b));localStorage.setItem(LAST,b.id)}
 function load(i){try{return JSON.parse(localStorage.getItem(B+i)||'null')}catch(_){return null}}
 function latest(){const i=localStorage.getItem(LAST);return i?load(i):null}
@@ -274,6 +323,14 @@ function ctLockDeliverContinueUrl(b,responseUrl,responseHtml,status){
   try{save(b)}catch(_){}
  }catch(_){}
 }
+function ctAssetDeliverMeta(b,a){
+ const meta=b?.assetMeta?.[String(a||'').toLowerCase()];
+ if(meta){
+  if(meta.skipped)return meta;
+  if(meta.sch)return meta;
+ }
+ return {sch:b?.location||'',locationName:b?.locationName||b?.location||'',deliveryUrl:b?.deliveryUrl||''}
+}
 async function deliverStage(b,a,knownInbound=false){
  const pf=ctSpeedProfile();
  // In the combined workflow a successful Drop phase already proves Inbound/DropMe,
@@ -285,16 +342,42 @@ async function deliverStage(b,a,knownInbound=false){
    if(!rgIsDropMeStatus(before.status))return {ok:false,result:'FAILED',msg:`Current RepairGenie status is ${before.status}; expected Inbound / DropMe before delivery. No delivery attempted.`,status:before.status};
   }
  }
- // First device: /dropmeschoolsdev?sch=...  After success RG lands on /dropdevice and stays there.
+ const meta=ctAssetDeliverMeta(b,a);
+ const locSch=meta.sch||b.location||'';
+ const locLabel=meta.locationName||locSch||b.location||'';
+ const startUrl=meta.deliveryUrl||ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(locSch));
+ // First device at a school: /dropmeschoolsdev?sch=...  After success RG lands on /dropdevice and stays there until school changes.
  const latest=b?.id?load(b.id):b;
- const deliverUrl=(latest?.deliveryUrl)||b.deliveryUrl||ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(b.location||''));
+ let deliverUrl;
+ if(latest?.activeDeliverSch&&String(latest.activeDeliverSch).toLowerCase()!==String(locSch).toLowerCase()){
+  deliverUrl=startUrl;
+  latest.deliveryUrl=startUrl;
+  latest.activeDeliverSch=locSch;
+  ctInvalidateWorkflowCache(ctRouteUrl('/dropdevice'));
+  try{save(latest)}catch(_){}
+ }else{
+  deliverUrl=(latest?.deliveryUrl)||startUrl;
+  if(latest&&!latest.activeDeliverSch){
+   latest.activeDeliverSch=locSch;
+   latest.deliveryUrl=deliverUrl;
+   try{save(latest)}catch(_){}
+  }
+ }
  const r=await rgSubmitWorkflowPage(deliverUrl,a,/dropmeschoolsdev|dropdevice/i);
- const parsed=r.ok?parseDeliver(a,r.html,b.location):{ok:false,result:'FAILED',msg:r.msg||('HTTP '+r.status)};
- if(r.ok&&(parsed.ok||/\/dropdevice/i.test(r.url||'')))ctLockDeliverContinueUrl(latest||b,r.url,r.html,r.status);
+ const parsed=r.ok?parseDeliver(a,r.html,locLabel):{ok:false,result:'FAILED',msg:r.msg||('HTTP '+r.status)};
+ const lockTarget=b?.id?load(b.id):latest||b;
+ if(r.ok&&(parsed.ok||/\/dropdevice/i.test(r.url||''))){
+  if(lockTarget){lockTarget.activeDeliverSch=locSch;try{save(lockTarget)}catch(_){}}
+  ctLockDeliverContinueUrl(lockTarget||b,r.url,r.html,r.status);
+ }
  if(parsed.ok&&!pf.verify)return parsed;
  const verified=await rgWaitForStatus(b,a,['Delivered']);
  if(verified.ok){
-  if(r.ok)ctLockDeliverContinueUrl(latest||b,r.url,r.html,r.status);
+  if(r.ok){
+   const again=b?.id?load(b.id):lockTarget||b;
+   if(again){again.activeDeliverSch=locSch;try{save(again)}catch(_){}}
+   ctLockDeliverContinueUrl(again||b,r.url,r.html,r.status);
+  }
   return {ok:true,result:parsed.ok&&parsed.result==='ALREADY DELIVERED'?'ALREADY DELIVERED':'DELIVERED',msg:(parsed.msg?parsed.msg+' ':'')+'Submitted through '+deliverUrl+' and verified Delivered by RepairGenie API.',status:'Delivered'};
  }
  return parsed;
@@ -329,7 +412,7 @@ function styles(){if(document.getElementById(P+'style'))return;const s=document.
 .rgbp .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:13px}
 .rgbp .stat{border:2px solid #e0d5f3;border-radius:12px;padding:10px 8px;text-align:center;background:#fff;box-shadow:0 3px 0 #4b2e8314;font-weight:700;color:#5f5473}
 .rgbp .stat b{display:block;font-size:24px;margin-top:3px;color:var(--rgp)}
-.rgbp-modal-bg{position:fixed;inset:0;background:#190f2d9e;z-index:999998;display:flex;align-items:center;justify-content:center;padding:20px}
+.rgbp-modal-bg{position:fixed;inset:0;background:#190f2d9e;z-index:1000001;display:flex;align-items:center;justify-content:center;padding:20px}
 .rgbp-modal{background:linear-gradient(180deg,#fff,#faf7ff);width:min(1100px,96vw);max-height:88vh;overflow:auto;border-radius:18px;border:3px solid var(--rgg);padding:18px;box-shadow:0 18px 45px #0005}
 .rgbp-modal h2{margin-top:0;color:var(--rgp);font-size:25px}
 .rgbp-modal h2:before{content:"📜 "}
@@ -363,7 +446,7 @@ function styles(){if(document.getElementById(P+'style'))return;const s=document.
 function modal(b,filter='all'){styles();document.getElementById(P+'modal')?.remove();const bg=document.createElement('div');bg.id=P+'modal';bg.className='rgbp-modal-bg';const m=document.createElement('div');m.className='rgbp-modal';bg.appendChild(m);const s=summary(b);m.innerHTML=`<h2>RepairGenie Battle Report</h2><div><b>${esc(b.modeName)}</b> ${b.location?'— '+esc(b.location):''}</div><div>Total ${s.total} | Complete ${s.complete} | Partial ${s.partial} | Failed ${s.failed} | Already Done ${s.already}</div><div style="margin:10px 0" class="controls"><button data-f="all">All</button><button data-f="failed">Failures</button><button data-f="partial">Partial</button><button data-f="already">Already Done</button><button data-f="complete">Successful</button><button id="${P}csv">Download CSV</button><button id="${P}xlsx">Download XLSX</button><button id="${P}close">Close</button></div><div style="max-height:58vh;overflow:auto"><table><thead><tr><th>Asset/Serial</th><th>DropMe</th><th>Delivered</th><th>Final</th><th>Location</th><th>Reason</th><th>Time</th></tr></thead><tbody id="${P}tbody"></tbody></table></div>`;document.body.appendChild(bg);
 const render=f=>{let rr=b.results.filter(r=>f==='all'||(f==='failed'&&r.final==='FAILED')||(f==='partial'&&r.final==='PARTIAL')||(f==='complete'&&r.final==='COMPLETE')||(f==='already'&&(r.drop.includes('ALREADY')||r.deliver.includes('ALREADY'))));m.querySelector('#'+P+'tbody').innerHTML=rr.map(r=>`<tr class="${r.final==='FAILED'?'f':r.final==='PARTIAL'?'p':'c'}"><td>${esc(r.asset)}</td><td>${esc(r.drop)}</td><td>${esc(r.deliver)}</td><td><b>${esc(r.final)}</b></td><td>${esc(r.location)}</td><td>${esc([r.dropMsg,r.deliverMsg].filter(Boolean).join(' | '))}</td><td>${esc(r.time)}</td></tr>`).join('')};m.querySelectorAll('[data-f]').forEach(x=>x.onclick=()=>render(x.dataset.f));m.querySelector('#'+P+'csv').onclick=()=>dlCSV(b);m.querySelector('#'+P+'xlsx').onclick=()=>dlXLSX(b);m.querySelector('#'+P+'close').onclick=()=>bg.remove();bg.onclick=e=>{if(e.target===bg)bg.remove()};render(filter)}
 function resultFor(b,a){return b.results.find(r=>r.asset.toLowerCase()===String(a).toLowerCase())}
-function ensureResult(b,a){let r=resultFor(b,a);if(!r){r={asset:a,drop:'NOT ATTEMPTED',dropMsg:'',deliver:'NOT ATTEMPTED',deliverMsg:'',final:'PENDING',location:b.location,time:''};b.results.push(r)}return r}
+function ensureResult(b,a){let r=resultFor(b,a);if(!r){const meta=ctAssetDeliverMeta(b,a);r={asset:a,drop:'NOT ATTEMPTED',dropMsg:'',deliver:'NOT ATTEMPTED',deliverMsg:'',final:'PENDING',location:meta.locationName||meta.sch||b.location||'',time:''};b.results.push(r)}return r}
 function finalizeResult(r){const alreadyDelivered=/^ALREADY DELIVERED$/i.test(r.drop||'')||/^ALREADY DELIVERED$/i.test(r.deliver||'');const dropOK=/^(DROPPED|ALREADY DROPPED|ALREADY INBOUND)$/i.test(r.drop||'')||alreadyDelivered;const deliverOK=/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver||'')||alreadyDelivered;r.final=!dropOK?'FAILED':deliverOK?'COMPLETE':'PARTIAL';r.time=new Date().toLocaleString();return r}
 function getTheme(){return ctLameMode()?'off':ctStoredTheme()}
 const CT_RAVE_REDUCE_KEY=P+'rave_reduce',CT_RAVE_QUIET_KEY=P+'rave_quiet',CT_RAVE_STROBE_KEY=P+'rave_strobe',CT_RAVE_SPEED_KEY=P+'rave_speed',CT_RAVE_NAV_KEY=P+'rave_nav';
@@ -387,7 +470,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.18'}catch(_){return'2.31.18'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.23'}catch(_){return'2.31.23'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -714,7 +797,7 @@ function ctResetModal(){styles();document.getElementById('ct_reset_modal')?.remo
 // DropMe / Delivered / Parts pages first.
 // ============================================================================
 const CT_TOOL={menu:'ct_tools_menu',workspace:'ct_tools_workspace',dropFile:'ct_tools_drop_file',partsFile:'ct_tools_parts_file',resetFile:'ct_tools_reset_file',dropStatus:'ct_tools_drop_status',partsStatus:'ct_tools_parts_status',resetStatus:'ct_tools_reset_status',minionStatus:'ct_tools_minion_status',workerFrame:'ct_tools_worker_frame',partsFrame:'ct_tools_parts_frame'};
-let ctDropAssets=[],ctDropFilename='',ctDropActiveBatchId='',ctDeliverLocationMap={};
+let ctDropAssets=[],ctDropRows=[],ctDropPerRow=false,ctDropFilename='',ctDropActiveBatchId='',ctDeliverLocationMap={};
 function ctTopWindow(){return window.top===window.self}
 function ctToolStyles(){if(document.getElementById('ct_tools_style'))return;const x=document.createElement('style');x.id='ct_tools_style';x.textContent=`
 #${CT_TOOL.menu}>a{font-weight:700!important;color:#6b46a6!important}
@@ -1183,7 +1266,7 @@ function ctAddSchoolsFromSelect(sel,add){
   // Prefer option value when it is a real school key; else use visible label.
   const sch=value&&!/^(0|-1)$/.test(value)?value:label;
   if(!ctLooksLikeSchoolOption(sch,label))continue;
-  if(!looksSchool&&sel.options.length<3)continue;
+  if(!looksSchool&&sel.options.length<2)continue;
   add(label||sch,sch,'');
   added++;
  }
@@ -1299,6 +1382,70 @@ function ctFindDropMenuUrls(){
  }
  return urls;
 }
+function ctDeliverLocCacheKey(){return P+'deliver_locs_v1:'+location.hostname}
+function ctLoadCachedDeliverLocations(){
+ try{
+  const raw=localStorage.getItem(ctDeliverLocCacheKey());
+  const arr=raw?JSON.parse(raw):null;
+  if(!Array.isArray(arr))return[];
+  return arr.filter(x=>x&&x.sch).map(x=>({name:String(x.name||x.sch),sch:String(x.sch),url:x.url||ctDeliverUrlForSch(x.sch,'')}));
+ }catch(_){return[]}
+}
+function ctSaveCachedDeliverLocations(items){
+ try{
+  if(!items?.length)return;
+  localStorage.setItem(ctDeliverLocCacheKey(),JSON.stringify(items.map(x=>({name:x.name,sch:x.sch,url:x.url||''}))));
+ }catch(_){}
+}
+async function ctScrapeDropLocationsViaFrame(dropUrl){
+ // Same-origin iframe runs /drop page JS (Select2 / AJAX school lists) that plain fetch cannot see.
+ const id='ct_tools_drop_loc_frame';
+ let frame=document.getElementById(id);
+ if(frame)frame.remove();
+ frame=document.createElement('iframe');
+ frame.id=id;
+ frame.setAttribute('aria-hidden','true');
+ frame.style.cssText='position:fixed;width:1px;height:1px;left:-10000px;top:-10000px;border:0;opacity:0;pointer-events:none';
+ const ready=new Promise(resolve=>{
+  let done=false;
+  const finish=()=>{if(done)return;done=true;resolve()};
+  frame.addEventListener('load',finish);
+  setTimeout(finish,8000);
+ });
+ document.body.appendChild(frame);
+ frame.src=dropUrl+(dropUrl.includes('?')?'&':'?')+'_ctloc='+Date.now();
+ await ready;
+ const deadline=Date.now()+6000;
+ let items=[];
+ while(Date.now()<deadline){
+  try{
+   const docu=frame.contentDocument;
+   if(docu&&docu.body){
+    const href=frame.contentWindow?.location?.href||dropUrl;
+    items=ctExtractDeliverLocationsFromDrop(docu,href,docu.documentElement?.outerHTML||'');
+    if(items.length)break;
+    // Fallback: every <option> on the largest select (including Select2 source selects)
+    const selects=[...docu.querySelectorAll('select')].sort((a,b)=>(b.options?.length||0)-(a.options?.length||0));
+    if(selects[0]?.options?.length>=2){
+      const found=[];
+      const add=(name,sch)=>{name=String(name||sch||'').replace(/\s+/g,' ').trim();sch=String(sch||name||'').replace(/\s+/g,' ').trim();if(!name||!sch||/^(select|choose|all|none|--)/i.test(sch))return;if(found.some(x=>x.sch.toLowerCase()===sch.toLowerCase()))return;found.push({name,sch,url:ctDeliverUrlForSch(sch,'')})};
+      for(const o of selects[0].options){
+       const label=(o.textContent||'').replace(/\s+/g,' ').trim();
+       const value=ctDecodeSchParam(o.value||'');
+       if(!ctLooksLikeSchoolOption(value||label,label))continue;
+       add(label||value,value&&!/^(0|-1)$/.test(value)?value:label);
+      }
+      if(found.length){items=found;break}
+    }
+   }
+  }catch(e){console.warn('[Cell Tech Power Processor] /drop frame scrape blocked:',e?.message||e);break}
+  await sleep(300);
+ }
+ let frameTok='';
+ try{frameTok=ctExtractToken(frame.contentDocument)||''}catch(_){}
+ try{frame.remove()}catch(_){}
+ return {items,token:frameTok,source:dropUrl+'#frame'};
+}
 async function ctRemoteDropContext(){
  let tok=token();
  ctDeliverLocationMap={};
@@ -1308,11 +1455,12 @@ async function ctRemoteDropContext(){
   for(const item of items||[]){
    if(!merge.some(x=>x.sch.toLowerCase()===item.sch.toLowerCase()))merge.push(item);
   }
-  if(items?.length&&!tried.includes(source))tried.push(source);
+  if(items?.length&&source&&!tried.includes(source))tried.push(source);
  };
- const ingestPage=async(url)=>{
-  if(!url||tried.includes(url))return null;
-  tried.push(url);
+ const ingestPage=async(url,{allowRetry=false}={})=>{
+  if(!url)return null;
+  if(!allowRetry&&tried.includes(url))return null;
+  if(!tried.includes(url))tried.push(url);
   const page=await rgFetchPage(url);
   if(!page.ok)return page;
   if(/\/login(?:\/|$|\?)/i.test(page.url)||/(?:name|id)=["']password["']/i.test(page.html||'')){
@@ -1323,8 +1471,18 @@ async function ctRemoteDropContext(){
   take(ctExtractDeliverLocationsFromDrop(d,page.url,page.html),page.url);
   return page;
  };
- // /drop holds the school dropdown; /dropmeschoolsdev?sch=... is the serial submit page after pick.
- const candidates=[ctRouteUrl('/drop'),...ctFindDropMenuUrls(),ctRouteUrl('/dropmeschoolsdev'),ctRouteUrl('/dropdevice')];
+ // Cold open: warm drop workflow pages, then scrape /drop (fetch + live iframe for JS-filled selects).
+ for(const warmPath of ['/createdrop','/dropmedev']){
+  try{
+   const warm=await rgFetchPage(ctRouteUrl(warmPath));
+   if(warm.ok){
+    tok=tok||ctExtractToken(doc(warm.html));
+    CT_WORKFLOW_CACHE.set(String(ctRouteUrl(warmPath)),warm);
+   }
+  }catch(_){}
+ }
+ const dropUrl=ctRouteUrl('/drop');
+ const candidates=[dropUrl,...ctFindDropMenuUrls(),ctRouteUrl('/dropmeschoolsdev'),ctRouteUrl('/dropdevice')];
  let lastPage=null,lastErr=null;
  for(const url of candidates){
   try{
@@ -1333,14 +1491,38 @@ async function ctRemoteDropContext(){
    if(merge.length)break;
   }catch(e){lastErr=e;if(/login/i.test(e?.message||''))throw e}
  }
+ if(!merge.length){
+  try{
+   await sleep(150);
+   const page=await ingestPage(dropUrl,{allowRetry:true});
+   if(page)lastPage=page;
+  }catch(e){lastErr=e;if(/login/i.test(e?.message||''))throw e}
+ }
  if(!merge.length&&ctPathLooksLikeDrop(location.pathname)){
   take(ctExtractDeliverLocationsFromDrop(document,location.href,document.documentElement?.outerHTML||''),location.href);
  }
+ // Plain fetch often misses the school <select> until /drop has run its own JS — use a hidden iframe.
+ if(!merge.length){
+  try{
+   const framed=await ctScrapeDropLocationsViaFrame(dropUrl);
+   tok=tok||framed.token;
+   take(framed.items,framed.source);
+   if(framed.items.length)tried.push(framed.source);
+  }catch(e){console.warn('[Cell Tech Power Processor] /drop iframe scrape failed:',e)}
+ }
+ if(!merge.length){
+  const cached=ctLoadCachedDeliverLocations();
+  if(cached.length){
+   take(cached,'local-cache');
+   console.info('[Cell Tech Power Processor] Using',cached.length,'cached deliver location(s) for',location.hostname);
+  }
+ }
  if(!merge.length&&lastErr&&!lastPage)throw lastErr;
- if(!lastPage&&!merge.length)throw Error('Could not open RepairGenie /drop page.');
+ if(!lastPage&&!merge.length&&!tried.length)throw Error('Could not open RepairGenie /drop page.');
  for(const item of merge)ctDeliverLocationMap[item.sch]=item;
+ if(merge.length&&!tried.includes('local-cache'))ctSaveCachedDeliverLocations(merge);
  const locations=merge.map(x=>x.name||x.sch);
- const source=tried.find(u=>merge.length&&u)||lastPage?.url||ctRouteUrl('/drop');
+ const source=(merge.length&&(tried.find(u=>/#frame$/.test(u)||/\/drop(?:\/|$|\?)/i.test(u))||tried[0]))||lastPage?.url||dropUrl;
  if(!merge.length)console.warn('[Cell Tech Power Processor] No deliver locations parsed. Tried:',tried);
  return {token:tok,locations,items:merge,source,tried};
 }
@@ -1362,34 +1544,370 @@ async function ctRunDropBatchInline(i){
    }else{
      snap=load(i);if(!snap)return;const prior=ensureResult(snap,a);
      if(/^ALREADY DELIVERED$/i.test(prior.deliver||'')){persistResult(a,r=>{r.final='COMPLETE'});return}
+     if(/^SKIPPED$/i.test(prior.deliver||'')){persistResult(a,r=>{finalizeResult(r)});return}
+     const meta=ctAssetDeliverMeta(snap,a);
+     if(snap.perRow&&(meta.skipped||!meta.sch)){
+      persistResult(a,r=>{if(r.final!=='COMPLETE'){r.deliver='SKIPPED';r.deliverMsg=meta.skipped?'Skipped in deliver location review.':'No deliver location resolved for this row.'}finalizeResult(r)});
+      return
+     }
      const dropOK=snap.mode==='deliver'||/^(DROPPED|ALREADY DROPPED|ALREADY INBOUND)$/i.test(prior.drop||'');
      if(dropOK){
        const knownInbound=snap.mode==='both'&&/^(DROPPED|ALREADY DROPPED|ALREADY INBOUND)$/i.test(prior.drop||'');
        let de;try{de=await deliverStage(snap,a,knownInbound)}catch(e){de={ok:false,result:'FAILED',msg:e?.message||String(e)}}
-       persistResult(a,r=>{r.deliver=de?.result||'FAILED';r.deliverMsg=de?.msg||'';finalizeResult(r);if(snap.mode==='deliver'&&r.drop==='NOT ATTEMPTED')r.final=/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver)?'COMPLETE':'FAILED'});
+       persistResult(a,r=>{r.deliver=de?.result||'FAILED';r.deliverMsg=de?.msg||'';if(de?.ok||/DELIVERED/i.test(de?.result||'')){const m=ctAssetDeliverMeta(snap,a);if(m.locationName||m.sch)r.location=m.locationName||m.sch}finalizeResult(r);if(snap.mode==='deliver'&&r.drop==='NOT ATTEMPTED')r.final=/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver)?'COMPLETE':'FAILED'});
      }else persistResult(a,r=>{if(r.final!=='COMPLETE'){r.deliver='SKIPPED';r.deliverMsg='DropMe stage did not complete successfully.'}finalizeResult(r)});
    }
  };
  const waitIfPaused=async()=>{while(true){const x=load(i);if(!x)return false;if(x.stop){x.running=false;save(x);ctSetDropLiveStatus('Batch stopped. Completed results were kept.');return false}if(!x.paused)return true;ctSetDropLiveStatus('Batch paused.');await sleep(250)}};
  const runPhase=async phase=>{
    b=load(i);b.phase=phase;b.index=0;save(b);
-   const total=b.assets.length,workers=Math.max(1,Math.min(pf.parallel,total));let next=0,done=0;
+   // Per-row multi-school deliver must stay sequential so /dropdevice lock can switch cleanly.
+   const multiSch=phase==='deliver'&&b.perRow&&Object.values(b.assetMeta||{}).reduce((s,m)=>{if(m?.sch)s.add(String(m.sch).toLowerCase());return s},new Set()).size>1;
+   const total=b.assets.length,workers=Math.max(1,Math.min(multiSch?1:pf.parallel,total));let next=0,done=0;
    const worker=async()=>{while(true){if(!await waitIfPaused())return false;const n=next++;if(n>=total)return true;const x=load(i);if(!x)return false;const a=x.assets[n];ctSetDropLiveStatus(`${phase==='drop'?'QC/Fixed → DropMe':'DropMe → Delivered'}: ${done+1}/${total} — ${a} — ${pf.mode.toUpperCase()}`);await processOne(a,phase);done++;const y=load(i);if(y){y.index=done;save(y);ctUpdateDropStats(y)}if(pf.between)await sleep(pf.between)}};
    const ok=await Promise.all(Array.from({length:workers},()=>worker()));return ok.every(Boolean)
  };
- if(b.mode==='both'){if(!await runPhase('drop'))return;ctSetDropLiveStatus('DropMe pass complete. Starting Delivered pass...');if(pf.phase)await sleep(pf.phase);if(!await runPhase('deliver'))return}
+ if(b.mode==='both'){
+  if(!await runPhase('drop'))return;
+  b=load(i);if(b){b.phase='resolve-locations';save(b)}
+  if(pf.phase)await sleep(pf.phase);
+  const resolved=await ctResolveDeliverLocationsForBatch(i);
+  if(!resolved||!resolved.ok){
+   b=load(i);if(b){b.running=false;b.finishedAt=new Date().toISOString();save(b);ctUpdateDropStats(b)}
+   ctSetDropLiveStatus((resolved&&resolved.msg)||CT_LOC_BLOCK_MSG);
+   return
+  }
+  b=load(i);if(b){b.phase='deliver';b.running=true;save(b)}
+  ctSetDropLiveStatus('Starting Delivered pass…');
+  if(!await runPhase('deliver'))return
+ }
  else if(!await runPhase(b.mode))return;
  b=load(i);b.running=false;b.finishedAt=new Date().toISOString();save(b);ctUpdateDropStats(b);notifyPeers('finished',b);browserNotify(b);play(summary(b).success);const sm=summary(b);ctSetDropLiveStatus(sm.success?`Batch complete: ${sm.complete}/${sm.total} successful — ${pf.mode.toUpperCase()} mode.`:`Batch finished: ${sm.failed} failed, ${sm.partial} partial, ${sm.complete} complete — ${pf.mode.toUpperCase()} mode.`)
 }
 function ctHiddenFrame(id,url){let f=document.getElementById(id);if(f)f.remove();f=document.createElement('iframe');f.id=id;f.src=url;f.style.cssText='position:fixed;width:1px;height:1px;left:-10000px;top:-10000px;border:0;opacity:0;pointer-events:none';document.body.appendChild(f);return f}
-function ctCreateBatch(mode,tok,locationName){const entry=Object.values(ctDeliverLocationMap).find(x=>(x.name||'').toLowerCase()===String(locationName||'').toLowerCase()||x.sch.toLowerCase()===String(locationName||'').toLowerCase());const b={id:id(),mode,modeName:modeName(mode),origin:ctRepairGenieBase(),host:location.hostname,token:tok||'',location:entry?.sch||locationName||'',locationName:entry?.name||locationName||'',deliveryUrl:entry?.url||((locationName)?ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(locationName)):''),fileName:ctDropFilename,assets:[...ctDropAssets],index:0,phase:mode==='both'?'drop':mode,running:false,paused:false,stop:false,results:[],startedAt:'',finishedAt:'',customerId:null};save(b);return b}
-function ctDropReadyMessage(mode,locationName){if(!ctDropAssets.length)return'Load a spreadsheet with Asset IDs / serial numbers in Column A.';if(mode!=='drop'&&!locationName)return'Choose or enter a Deliver Location before running Delivered.';return`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}.`}
+function ctDeliverLocationItems(){return Object.values(ctDeliverLocationMap||{}).filter(x=>x&&x.sch)}
+function ctMatchDeliverLocation(requested,items){
+ const req=ctNormLocKey(requested);
+ const list=items||ctDeliverLocationItems();
+ if(!req)return{status:'blank',match:null,candidates:[]};
+ const exact=list.filter(x=>ctNormLocKey(x.name)===req||ctNormLocKey(x.sch)===req);
+ if(exact.length===1)return{status:'auto',match:exact[0],candidates:exact};
+ if(exact.length>1)return{status:'multi',match:null,candidates:exact};
+ const soft=list.filter(x=>{const n=ctNormLocKey(x.name),s=ctNormLocKey(x.sch);return(n&&(n.includes(req)||req.includes(n)))||(s&&(s.includes(req)||req.includes(s)))});
+ if(soft.length===1)return{status:'auto',match:soft[0],candidates:soft};
+ if(soft.length>1)return{status:'multi',match:null,candidates:soft};
+ return{status:'none',match:null,candidates:[]}
+}
+function ctApplyDropLocationMatches(rows,items){
+ const list=items||ctDeliverLocationItems();
+ return(rows||[]).map(r=>{
+  if(r.skipped)return{...r,matchStatus:'skipped'};
+  if(r.matchStatus==='resolved'&&r.sch)return r;
+  if(r.matchStatus==='legacy')return r;
+  const m=ctMatchDeliverLocation(r.requested,list);
+  if(m.status==='auto'&&m.match){
+   return{...r,sch:m.match.sch,locationName:m.match.name||m.match.sch,deliveryUrl:m.match.url||ctDeliverUrlForSch(m.match.sch,''),matchStatus:'auto',candidates:[]};
+  }
+  return{...r,sch:'',locationName:'',deliveryUrl:'',matchStatus:m.status,candidates:m.candidates||[]}
+ })
+}
+function ctDropMatchSummary(rows){
+ const active=(rows||[]).filter(r=>!r.skipped);
+ return{
+  total:active.length,
+  auto:active.filter(r=>r.matchStatus==='auto'||r.matchStatus==='resolved').length,
+  review:active.filter(r=>['blank','none','multi','pending'].includes(r.matchStatus)).length,
+  skipped:(rows||[]).filter(r=>r.skipped).length
+ }
+}
+function ctShowDeliverLocationReview(rows,items){
+ return new Promise(resolve=>{
+  styles();
+  document.getElementById(P+'loc_review')?.remove();
+  const list=items||ctDeliverLocationItems();
+  const need=rows.map((r,i)=>({r,i})).filter(x=>!x.r.skipped&&['blank','none','multi','pending'].includes(x.r.matchStatus));
+  const bg=document.createElement('div');bg.id=P+'loc_review';bg.className='rgbp-modal-bg';
+  const m=document.createElement('div');m.className='rgbp-modal';bg.appendChild(m);
+  const optHtml='<option value="">-- Select Deliver Location --</option>'+list.map(v=>`<option value="${esc(v.sch)}">${esc(v.name||v.sch)}</option>`).join('');
+  m.innerHTML=`<h2>Deliver Location Review</h2><div style="margin-bottom:10px">These rows need a location before Delivered can run. Pick from the RG /drop list, or skip the row.</div><div style="max-height:58vh;overflow:auto"><table><thead><tr><th>Asset/Serial</th><th>Spreadsheet</th><th>Issue</th><th>Deliver Location</th><th></th></tr></thead><tbody id="${P}loc_tbody"></tbody></table></div><div class="controls" style="margin-top:12px"><button id="${P}loc_confirm" class="go">Confirm &amp; Continue</button><button id="${P}loc_cancel">Cancel</button></div>`;
+  document.body.appendChild(bg);
+  const tbody=m.querySelector('#'+P+'loc_tbody');
+  const issue=s=>s==='blank'?'No location in Col B':s==='multi'?'Multiple matches':s==='none'?'No match':'Needs review';
+  tbody.innerHTML=need.map(({r,i})=>`<tr data-i="${i}"><td>${esc(r.asset)}</td><td>${esc(r.requested||'')}</td><td>${esc(issue(r.matchStatus))}</td><td><select class="ct-loc-pick" style="min-width:220px">${optHtml}</select></td><td><button type="button" class="ct-loc-skip">Skip</button></td></tr>`).join('');
+  tbody.querySelectorAll('tr').forEach(tr=>{
+   const i=Number(tr.dataset.i);const r=rows[i];
+   const sel=tr.querySelector('.ct-loc-pick');
+   if(r.candidates?.length===1)sel.value=r.candidates[0].sch;
+   else if(r.sch)sel.value=r.sch;
+   tr.querySelector('.ct-loc-skip').onclick=()=>{r.skipped=true;r.matchStatus='skipped';r.sch='';r.locationName='';r.deliveryUrl='';tr.remove()};
+  });
+  const finish=ok=>{bg.remove();resolve(ok)};
+  m.querySelector('#'+P+'loc_cancel').onclick=()=>finish(false);
+  m.querySelector('#'+P+'loc_confirm').onclick=()=>{
+   for(const tr of [...tbody.querySelectorAll('tr')]){
+    const i=Number(tr.dataset.i);const r=rows[i];if(r.skipped)continue;
+    const sch=tr.querySelector('.ct-loc-pick')?.value?.trim()||'';
+    if(!sch){alert('Choose a deliver location for '+r.asset+' or skip the row.');return}
+    const hit=list.find(x=>x.sch===sch)||{sch,name:sch,url:ctDeliverUrlForSch(sch,'')};
+    r.sch=hit.sch;r.locationName=hit.name||hit.sch;r.deliveryUrl=hit.url||ctDeliverUrlForSch(hit.sch,'');r.matchStatus='resolved';r.skipped=false;r.candidates=[];
+   }
+   finish(true)
+  };
+  // Require Cancel button — backdrop click used to abort Both mid-flow by accident.
+ })
+}
+function ctShowSingleDeliverLocationPick(items,title,blurb){
+ return new Promise(resolve=>{
+  styles();
+  document.getElementById(P+'loc_pick')?.remove();
+  const list=items||[];
+  const bg=document.createElement('div');bg.id=P+'loc_pick';bg.className='rgbp-modal-bg';
+  const m=document.createElement('div');m.className='rgbp-modal';bg.appendChild(m);
+  m.innerHTML=`<h2>${esc(title||'Choose Deliver Location')}</h2><div style="margin-bottom:10px">${esc(blurb||'DropMe finished. Pick where to deliver these devices.')}</div><label>Deliver Location</label><select id="${P}loc_pick_sel" style="width:100%;min-height:40px;margin-top:6px"><option value="">-- Select Deliver Location --</option>${list.map(v=>`<option value="${esc(v.sch)}">${esc(v.name||v.sch)}</option>`).join('')}</select><div class="controls" style="margin-top:12px"><button id="${P}loc_pick_go" class="go">Continue to Delivered</button><button id="${P}loc_pick_cancel">Cancel</button></div>`;
+  document.body.appendChild(bg);
+  const sel=m.querySelector('#'+P+'loc_pick_sel');
+  if(list.length===1)sel.value=list[0].sch;
+  const finish=v=>{bg.remove();resolve(v)};
+  m.querySelector('#'+P+'loc_pick_cancel').onclick=()=>finish(null);
+  m.querySelector('#'+P+'loc_pick_go').onclick=()=>{
+   const sch=sel.value.trim();
+   if(!sch){alert('Choose a deliver location to continue.');return}
+   finish(list.find(x=>x.sch===sch)||{sch,name:sch,url:ctDeliverUrlForSch(sch,'')})
+  };
+ })
+}
+const CT_LOC_BLOCK_MSG='Deliver locations not loaded. Open Drop Devices (/drop) once on this RG, then click Refresh Deliver Locations.';
+function ctUiDeliverLocationHint(){
+ const lm=document.querySelector('#ct_tools_location_manual');
+ const ls=document.querySelector('#ct_tools_location');
+ return String(lm?.value||ls?.value||'').trim();
+}
+function ctSyncDeliverLocationSelect(items){
+ const ls=document.querySelector('#ct_tools_location');if(!ls)return;
+ const prev=ls.value;
+ ls.innerHTML='<option value="">-- Select Deliver Location --</option>'+(items||[]).map(v=>`<option value="${esc(v.sch)}">${esc(v.name||v.sch)}</option>`).join('');
+ if(prev&&(items||[]).some(v=>v.sch===prev))ls.value=prev;
+ else if((items||[]).length===1)ls.value=items[0].sch;
+}
+function ctAttachDeliverMetaToBatch(b,preparedRows,locationHint){
+ if(!b)return b;
+ if(b.perRow&&preparedRows){
+  const meta={};
+  for(const r of preparedRows){
+   if(!r?.asset)continue;
+   const key=String(r.asset).toLowerCase();
+   if(r.skipped){meta[key]={skipped:true,sch:'',locationName:'',deliveryUrl:''};continue}
+   if(!r.sch)continue;
+   meta[key]={sch:r.sch,locationName:r.locationName||r.sch,deliveryUrl:r.deliveryUrl||ctDeliverUrlForSch(r.sch,'')};
+  }
+  b.assetMeta=meta;
+  const ordered=[...b.assets].sort((a,c)=>{
+   const ma=meta[String(a).toLowerCase()]||{},mc=meta[String(c).toLowerCase()]||{};
+   const sa=ma.skipped||!ma.sch?1:0,sc=mc.skipped||!mc.sch?1:0;
+   if(sa!==sc)return sa-sc;
+   return String(ma.sch||'').localeCompare(String(mc.sch||''),undefined,{sensitivity:'base'})||String(a).localeCompare(String(c));
+  });
+  b.assets=ordered;
+  const first=ordered.map(a=>meta[String(a).toLowerCase()]).find(m=>m&&m.sch&&!m.skipped);
+  b.location=first?.sch||'';
+  b.locationName=first?.locationName||b.location;
+  b.deliveryUrl=first?.deliveryUrl||(b.location?ctDeliverUrlForSch(b.location,''):'');
+  b.activeDeliverSch=b.location;
+  b.sheetRows=preparedRows.map(r=>({...r}));
+ }else{
+  const hint=String(locationHint||b.location||b.locationName||'');
+  const entry=Object.values(ctDeliverLocationMap).find(x=>(x.name||'').toLowerCase()===hint.toLowerCase()||x.sch.toLowerCase()===hint.toLowerCase());
+  b.location=entry?.sch||hint||'';
+  b.locationName=entry?.name||hint||'';
+  b.deliveryUrl=entry?.url||(b.location?ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(b.location)):'');
+  b.activeDeliverSch=b.location;
+  b.assetMeta=b.assetMeta||{};
+ }
+ return b;
+}
+async function ctResolveDeliverLocationsForBatch(batchId){
+ try{
+  let b=load(batchId);if(!b)return{ok:false,msg:'Batch not found.'};
+  ctSetDropLiveStatus('DropMe pass complete. Loading deliver locations…');
+  await sleep(600);
+  let ctx;
+  try{ctx=await ctRemoteDropContext()}catch(e){return{ok:false,msg:'Could not load deliver locations: '+(e?.message||String(e))}}
+  if(!(ctx.items||[]).length){
+   ctSetDropLiveStatus('DropMe complete. Retrying deliver location scrape…');
+   await sleep(900);
+   try{ctx=await ctRemoteDropContext()}catch(e){return{ok:false,msg:'Could not load deliver locations: '+(e?.message||String(e))}}
+  }
+  if(ctx.token){b=load(batchId)||b;b.token=ctx.token;save(b)}
+  ctSyncDeliverLocationSelect(ctx.items||[]);
+  b=load(batchId)||b;
+  if(ctx.token)b.token=ctx.token;
+  if(!(ctx.items||[]).length){
+   // Last chance: typed/selected UI location (legacy) even if scrape failed.
+   const uiHint=ctUiDeliverLocationHint();
+   if(uiHint&&!b.perRow){
+    ctAttachDeliverMetaToBatch(b,null,uiHint);save(b);
+    if(b.deliveryUrl)await ctGetWorkflowPage(b.deliveryUrl).catch(()=>{});
+    return{ok:true};
+   }
+   save(b);
+   return{ok:false,msg:CT_LOC_BLOCK_MSG+' DropMe results were kept — switch to Delivered after Refresh, or open /drop once.'};
+  }
+  // Prefer per-row Col B when we have sheet rows; otherwise treat as legacy batch location.
+  const sheet=(b.sheetRows&&b.sheetRows.length)?b.sheetRows:(ctDropRows||[]);
+  const usePerRow=!!(b.perRow&&sheet.length);
+  if(usePerRow){
+   const seed=sheet.map(r=>{
+    if(r.skipped)return{...r,matchStatus:'skipped',sch:'',locationName:'',deliveryUrl:''};
+    if(r.matchStatus==='resolved'&&r.sch)return{...r};
+    return{...r,sch:'',locationName:'',deliveryUrl:'',matchStatus:r.requested?'pending':'blank',candidates:[]};
+   });
+   let prepared=ctApplyDropLocationMatches(seed,ctx.items);
+   const need=prepared.filter(r=>!r.skipped&&['blank','none','multi','pending'].includes(r.matchStatus));
+   if(need.length){
+    ctSetDropLiveStatus(`${need.length} row(s) need deliver location review before Delivered…`);
+    const ok=await ctShowDeliverLocationReview(prepared,ctx.items);
+    if(!ok)return{ok:false,msg:'Deliver location review cancelled. DropMe results were kept — run Delivered when ready.'};
+   }
+   const runnable=prepared.filter(r=>!r.skipped&&r.sch);
+   if(!runnable.length)return{ok:false,msg:'No devices left to deliver after review/skips. DropMe results were kept.'};
+   const sum=ctDropMatchSummary(prepared);
+   ctSetDropLiveStatus(`Locations ready: ${sum.auto} auto-matched, ${need.length} reviewed, ${sum.skipped} skipped. Starting Delivered…`);
+   ctDropRows=prepared;
+   b=load(batchId)||b;
+   ctAttachDeliverMetaToBatch(b,prepared,null);
+   for(const r of prepared){
+    if(!r.skipped)continue;
+    const latest=load(batchId)||b;
+    const rr=ensureResult(latest,r.asset);
+    if(rr.final==='COMPLETE'||/^SKIPPED$/i.test(rr.deliver||''))continue;
+    rr.deliver='SKIPPED';rr.deliverMsg='Skipped in deliver location review.';finalizeResult(rr);rr.time=new Date().toLocaleString();save(latest);
+   }
+   b=load(batchId)||b;
+   save(b);
+   if(b.deliveryUrl)await ctGetWorkflowPage(b.deliveryUrl).catch(()=>{});
+   return{ok:true};
+  }
+  // Legacy single-location path — pick interactively if not already chosen
+  let hint=b.location||b.locationName||ctUiDeliverLocationHint()||'';
+  if(!hint&&ctx.items.length===1)hint=ctx.items[0].sch;
+  if(!hint){
+   ctSetDropLiveStatus('DropMe complete. Choose a deliver location to continue…');
+   const picked=await ctShowSingleDeliverLocationPick(ctx.items,'Deliver Location','DropMe finished. Choose one deliver location for this batch, then Delivered will start.');
+   if(!picked)return{ok:false,msg:'Deliver location not chosen. DropMe results were kept — run Delivered when ready.'};
+   hint=picked.sch;
+   ctSyncDeliverLocationSelect(ctx.items);
+   const ls=document.querySelector('#ct_tools_location');if(ls)ls.value=picked.sch;
+  }
+  b=load(batchId)||b;
+  ctAttachDeliverMetaToBatch(b,null,hint);
+  save(b);
+  ctSetDropLiveStatus(`Deliver location set: ${b.locationName||b.location}. Starting Delivered…`);
+  if(b.deliveryUrl)await ctGetWorkflowPage(b.deliveryUrl).catch(()=>{});
+  return{ok:true};
+ }catch(e){
+  console.error('[Cell Tech Power Processor] resolve deliver locations',e);
+  return{ok:false,msg:'Stopped after DropMe: '+(e?.message||String(e))+'. DropMe results were kept.'};
+ }
+}
+function ctCreateBatch(mode,tok,locationHint,preparedRows=null){
+ const perRow=!!(preparedRows&&ctDropPerRow);
+ let assets,assetMeta={},locSch='',locName='',deliveryUrl='',activeDeliverSch='';
+ const sheetRows=perRow?(preparedRows||[]).map(r=>({...r})):[];
+ if(perRow){
+  // Both/Drop: allow assets before locations resolve. Deliver: require sch.
+  const deferLoc=mode==='both'||mode==='drop';
+  const active=preparedRows.filter(r=>!r.skipped&&r.asset&&(deferLoc||r.sch));
+  if(!deferLoc)active.sort((a,b)=>String(a.sch||'').localeCompare(String(b.sch||''),undefined,{sensitivity:'base'})||String(a.asset).localeCompare(String(b.asset)));
+  assets=active.map(r=>r.asset);
+  for(const r of active){
+   if(!r.sch)continue;
+   assetMeta[String(r.asset).toLowerCase()]={sch:r.sch||'',locationName:r.locationName||r.sch||'',deliveryUrl:r.deliveryUrl||(r.sch?ctDeliverUrlForSch(r.sch,''):'')};
+  }
+  locSch=active.find(r=>r.sch)?.sch||'';
+  locName=active.find(r=>r.sch)?.locationName||locSch;
+  deliveryUrl=active.find(r=>r.sch)?.deliveryUrl||(locSch?ctDeliverUrlForSch(locSch,''):'');
+  activeDeliverSch=locSch;
+ }else{
+  const hint=String(locationHint||'');
+  const entry=Object.values(ctDeliverLocationMap).find(x=>(x.name||'').toLowerCase()===hint.toLowerCase()||x.sch.toLowerCase()===hint.toLowerCase());
+  assets=[...ctDropAssets];
+  locSch=entry?.sch||hint||'';
+  locName=entry?.name||hint||'';
+  deliveryUrl=entry?.url||(locSch?ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(locSch)):'');
+  activeDeliverSch=locSch;
+ }
+ const b={id:id(),mode,modeName:modeName(mode),origin:ctRepairGenieBase(),host:window.location.hostname,token:tok||'',location:locSch,locationName:locName,deliveryUrl,activeDeliverSch,assetMeta,sheetRows,fileName:ctDropFilename,assets,index:0,phase:mode==='both'?'drop':mode,running:false,paused:false,stop:false,results:[],startedAt:'',finishedAt:'',customerId:null,perRow};
+ save(b);return b
+}
+function ctDropReadyMessage(mode,locationName){if(!ctDropAssets.length)return'Load a spreadsheet with Asset IDs / serials in Column A'+(mode==='drop'?'':'; optional Deliver Location in Column B')+'.';if(mode!=='drop'&&!locationName&&!ctDropPerRow)return'Choose or enter a Deliver Location before running Delivered.';return`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}.`}
 function ctUpdateDropStats(batch=null){const w=document.getElementById(CT_TOOL.workspace);if(!w)return;const vals=batch?summary(batch):{total:ctDropAssets.length,processed:0,complete:0,partial:0,failed:0};for(const [id,v] of Object.entries({ct_tools_drop_total:vals.total,ct_tools_drop_processed:vals.processed,ct_tools_drop_complete:vals.complete,ct_tools_drop_partial:vals.partial,ct_tools_drop_failed:vals.failed})){const el=w.querySelector('#'+id);if(el)el.textContent=v}}
-function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('drop'))}</h2><div>Run QC/Fixed → DropMe, Inbound/DropMe → Delivered, or the full two-stage process from anywhere in this RepairGenie site. The processor checks each device first: devices already Inbound/DropMe skip the Drop step and continue directly to Delivered.</div><div class="ctw-grid" style="margin-top:14px"><div><label>Workflow</label><select id="ct_tools_mode"><option value="drop">Fixed/QC → DropMe</option><option value="deliver">Inbound/DropMe → Delivered</option><option value="both">Fixed/QC → DropMe → Delivered</option></select></div><div><label>Spreadsheet</label><input id="${CT_TOOL.dropFile}" type="file" accept=".csv,.xlsx,.xlsm,.xls,.txt"></div><div><label>Deliver Location</label><select id="ct_tools_location"><option value="">Loading locations...</option></select><input id="ct_tools_location_manual" type="text" placeholder="Or type exact deliver location" style="margin-top:6px"><button id="ct_tools_refresh_locations" style="margin-top:6px;width:100%">Refresh Deliver Locations</button></div></div><div class="ctw-actions"><button id="ct_tools_drop_go" class="go" disabled>${esc(ctActionLabel('UNLEASH THE POWER','START PROCESSOR'))}</button><button id="ct_tools_drop_pause" class="warn">PAUSE / RESUME</button><button id="ct_tools_drop_stop" class="bad">STOP</button><button id="ct_tools_drop_report">View Battle Report</button></div><div id="${CT_TOOL.dropStatus}" class="ctw-status">Load a spreadsheet.</div><div class="ctw-stats"><div class="ctw-stat">Total<b id="ct_tools_drop_total">${ctDropAssets.length||0}</b></div><div class="ctw-stat">Processed<b id="ct_tools_drop_processed">0</b></div><div class="ctw-stat">Complete<b id="ct_tools_drop_complete">0</b></div><div class="ctw-stat">Partial<b id="ct_tools_drop_partial">0</b></div><div class="ctw-stat">Failed<b id="ct_tools_drop_failed">0</b></div></div></div>`;
- const f=c.querySelector('#'+CT_TOOL.dropFile),m=c.querySelector('#ct_tools_mode'),ls=c.querySelector('#ct_tools_location'),lm=c.querySelector('#ct_tools_location_manual'),go=c.querySelector('#ct_tools_drop_go'),st=c.querySelector('#'+CT_TOOL.dropStatus),refresh=c.querySelector('#ct_tools_refresh_locations');let remoteToken='';const chosen=()=>lm.value.trim()||ls.value.trim();const ready=()=>{const where=chosen();if(!ctDropAssets.length){st.textContent='Load a spreadsheet with Asset IDs / serial numbers in Column A.';go.disabled=true;return}if(m.value!=='drop'&&!where){st.textContent=`Ready: ${ctDropAssets.length} device(s), but choose or enter a Deliver Location.`;go.disabled=true;return}st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}.`;go.disabled=false};
- const loadContext=async()=>{const previous=chosen();ls.innerHTML='<option value="">Loading locations...</option>';try{const x=await ctRemoteDropContext();remoteToken=x.token;ctGetWorkflowPage(ctRouteUrl('/createdrop')).catch(()=>{});ls.innerHTML='<option value="">-- Select Deliver Location --</option>'+x.items.map(v=>`<option value="${esc(v.sch)}">${esc(v.name||v.sch)}</option>`).join('');if(previous&&x.items.some(v=>v.sch.toLowerCase()===previous.toLowerCase()||(v.name||'').toLowerCase()===previous.toLowerCase())){const hit=x.items.find(v=>v.sch.toLowerCase()===previous.toLowerCase()||(v.name||'').toLowerCase()===previous.toLowerCase());ls.value=hit.sch}else if(x.items.length===1)ls.value=x.items[0].sch;if(!x.locations.length){ls.innerHTML='<option value="">No Deliver Locations found on /drop</option>';if(m.value!=='drop')st.textContent=`No Deliver Locations parsed from ${(x.tried&&x.tried.length)?x.tried.join(' | '):(x.source||'/drop')}. Open Drop Devices on this RG, or type the exact location below.`;else ready()}else ready()}catch(e){ls.innerHTML='<option value="">Deliver Location lookup failed</option>';st.textContent='Deliver Location lookup failed: '+(e?.message||String(e));ready()}};
- f.onchange=async()=>{try{st.textContent='Reading spreadsheet...';ctDropActiveBatchId='';ctDropAssets=await readFile(f.files[0]);ctDropFilename=f.files[0].name;if(!ctDropAssets.length)throw Error('No Asset IDs / serials found in Column A.');ctUpdateDropStats(null);ready()}catch(e){ctDropActiveBatchId='';ctDropAssets=[];ctDropFilename='';ctUpdateDropStats(null);st.textContent=e.message;go.disabled=true}};m.onchange=ready;ls.onchange=()=>{if(ls.value)lm.value='';ready()};lm.oninput=ready;refresh.onclick=loadContext;loadContext();
- go.onclick=async()=>{if(!ctDropAssets.length)return st.textContent='Load a spreadsheet first.';const where=chosen();if(m.value!=='drop'&&!where)return st.textContent='Choose or enter a Deliver Location.';go.disabled=true;st.textContent='Preparing RepairGenie session...';if(!remoteToken){const x=await ctRemoteDropContext();remoteToken=x.token;if(!where&&x.items?.length===1){ls.value=x.items[0].sch}}const finalWhere=chosen();if(m.value!=='drop'&&!finalWhere){go.disabled=false;return st.textContent='Choose or enter a Deliver Location.'}if(m.value==='both'&&!confirm(`This will perform TWO status changes per device:\nFixed/QC → DropMe → Delivered\nLocation: ${finalWhere}\nDevices: ${ctDropAssets.length}\n\nContinue?`)){go.disabled=false;return}const batch=ctCreateBatch(m.value,remoteToken,finalWhere);ctClearWorkflowCache();await ctGetWorkflowPage(ctRouteUrl('/createdrop')).catch(()=>{});if(finalWhere)await ctGetWorkflowPage(batch.deliveryUrl).catch(()=>{});ctDropActiveBatchId=batch.id;ctUpdateDropStats(batch);st.textContent=`Starting ${batch.assets.length} device(s)...`;ctRunDropBatchInline(batch.id).catch(e=>{const x=load(batch.id);if(x){x.running=false;save(x)}st.textContent='Processor error: '+(e?.message||String(e));console.error('[Cell Tech Power Processor]',e)}).finally(()=>{go.disabled=false})};
+function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('drop'))}</h2><div>Run QC/Fixed → DropMe, Inbound/DropMe → Delivered, or the full two-stage process from anywhere in this RepairGenie site. The processor checks each device first: devices already Inbound/DropMe skip the Drop step and continue directly to Delivered.</div><div class="ctw-grid" style="margin-top:14px"><div><label>Workflow</label><select id="ct_tools_mode"><option value="drop">Fixed/QC → DropMe</option><option value="deliver">Inbound/DropMe → Delivered</option><option value="both">Fixed/QC → DropMe → Delivered</option></select></div><div><label>Spreadsheet</label><input id="${CT_TOOL.dropFile}" type="file" accept=".csv,.xlsx,.xlsm,.xls,.txt"><div style="font-size:12px;margin-top:5px;color:#666">Col A = Asset/Serial. Col B = Deliver Location (for per-row auto-match on Delivered).</div></div><div><label>Deliver Location <span style="font-weight:600;color:#888">(legacy if Col B empty)</span></label><select id="ct_tools_location"><option value="">Loading locations...</option></select><input id="ct_tools_location_manual" type="text" placeholder="Or type exact deliver location" style="margin-top:6px"><button id="ct_tools_refresh_locations" style="margin-top:6px;width:100%">Refresh Deliver Locations</button></div></div><div class="ctw-actions"><button id="ct_tools_drop_go" class="go" disabled>${esc(ctActionLabel('UNLEASH THE POWER','START PROCESSOR'))}</button><button id="ct_tools_drop_pause" class="warn">PAUSE / RESUME</button><button id="ct_tools_drop_stop" class="bad">STOP</button><button id="ct_tools_drop_report">View Battle Report</button></div><div id="${CT_TOOL.dropStatus}" class="ctw-status">Load a spreadsheet.</div><div class="ctw-stats"><div class="ctw-stat">Total<b id="ct_tools_drop_total">${ctDropAssets.length||0}</b></div><div class="ctw-stat">Processed<b id="ct_tools_drop_processed">0</b></div><div class="ctw-stat">Complete<b id="ct_tools_drop_complete">0</b></div><div class="ctw-stat">Partial<b id="ct_tools_drop_partial">0</b></div><div class="ctw-stat">Failed<b id="ct_tools_drop_failed">0</b></div></div></div>`;
+ const f=c.querySelector('#'+CT_TOOL.dropFile),m=c.querySelector('#ct_tools_mode'),ls=c.querySelector('#ct_tools_location'),lm=c.querySelector('#ct_tools_location_manual'),go=c.querySelector('#ct_tools_drop_go'),st=c.querySelector('#'+CT_TOOL.dropStatus),refresh=c.querySelector('#ct_tools_refresh_locations');let remoteToken='';const chosen=()=>lm.value.trim()||ls.value.trim();
+ const ready=()=>{
+  if(!ctDropAssets.length){st.textContent='Load a spreadsheet with Asset IDs / serials in Column A'+(m.value==='drop'?'':'; (Col B = deliver location for auto-match)')+'.';go.disabled=true;return}
+  if(m.value==='drop'){st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}.`;go.disabled=false;return}
+  if(m.value==='both'){
+   if(ctDropPerRow){st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}. DropMe first — locations match from Col B after DropMe.`;go.disabled=false;return}
+   st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}. DropMe first`+(chosen()?`; then deliver to ${chosen()}.`:', then pick/match Deliver Location.') ;go.disabled=false;return
+  }
+  // Deliver-only: block until /drop list is loaded
+  if(!ctDeliverLocationItems().length){st.textContent=CT_LOC_BLOCK_MSG;go.disabled=true;return}
+  if(ctDropPerRow){
+   const matched=ctApplyDropLocationMatches(ctDropRows,ctDeliverLocationItems());
+   const sum=ctDropMatchSummary(matched);
+   st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}. ${sum.auto} auto-matched, ${sum.review} need review`+(sum.skipped?`, ${sum.skipped} skipped`:'')+'.';
+   go.disabled=false;return
+  }
+  if(!chosen()){st.textContent=`Ready: ${ctDropAssets.length} device(s), but choose or enter a Deliver Location.`;go.disabled=true;return}
+  st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}.`;go.disabled=false
+ };
+ const loadContext=async()=>{const previous=chosen();ls.innerHTML='<option value="">Loading locations...</option>';st.textContent='Loading deliver locations from /drop (may take a few seconds)…';try{const x=await ctRemoteDropContext();remoteToken=x.token;ctGetWorkflowPage(ctRouteUrl('/createdrop')).catch(()=>{});ctSyncDeliverLocationSelect(x.items);if(previous&&x.items.some(v=>v.sch.toLowerCase()===previous.toLowerCase()||(v.name||'').toLowerCase()===previous.toLowerCase())){const hit=x.items.find(v=>v.sch.toLowerCase()===previous.toLowerCase()||(v.name||'').toLowerCase()===previous.toLowerCase());ls.value=hit.sch}else if(x.items.length===1)ls.value=x.items[0].sch;if(!x.locations.length){ls.innerHTML='<option value="">No Deliver Locations found on /drop</option>';if(m.value==='deliver')st.textContent=CT_LOC_BLOCK_MSG;else ready()}else{if(ctDropPerRow&&ctDropRows.length&&m.value==='deliver')ctDropRows=ctApplyDropLocationMatches(ctDropRows,x.items);if(x.tried?.includes('local-cache')&&x.items.length)st.textContent=`Loaded ${x.items.length} cached deliver location(s). Click Refresh after opening /drop to update.`;ready()}}catch(e){ls.innerHTML='<option value="">Deliver Location lookup failed</option>';st.textContent='Deliver Location lookup failed: '+(e?.message||String(e));ready()}};
+ f.onchange=async()=>{try{st.textContent='Reading spreadsheet...';ctDropActiveBatchId='';const parsed=await readDropFile(f.files[0]);ctDropRows=parsed.rows;ctDropPerRow=parsed.perRow;ctDropAssets=parsed.assets;ctDropFilename=f.files[0].name;if(ctDropPerRow&&ctDeliverLocationItems().length&&m.value==='deliver')ctDropRows=ctApplyDropLocationMatches(ctDropRows,ctDeliverLocationItems());ctUpdateDropStats(null);ready()}catch(e){ctDropActiveBatchId='';ctDropAssets=[];ctDropRows=[];ctDropPerRow=false;ctDropFilename='';ctUpdateDropStats(null);st.textContent=e.message;go.disabled=true}};m.onchange=ready;ls.onchange=()=>{if(ls.value)lm.value='';ready()};lm.oninput=ready;refresh.onclick=loadContext;loadContext();
+ go.onclick=async()=>{
+  if(!ctDropAssets.length)return st.textContent='Load a spreadsheet first.';
+  go.disabled=true;
+  try{
+   st.textContent='Preparing RepairGenie session...';
+   let prepared=null,finalWhere=chosen();
+   if(m.value==='deliver'){
+    if(!remoteToken||!ctDeliverLocationItems().length){
+     const x=await ctRemoteDropContext();remoteToken=x.token;ctSyncDeliverLocationSelect(x.items||[]);
+    }
+    if(!ctDeliverLocationItems().length){go.disabled=false;return st.textContent=CT_LOC_BLOCK_MSG}
+    if(ctDropPerRow){
+     prepared=ctApplyDropLocationMatches(ctDropRows.map(r=>({...r})),ctDeliverLocationItems());
+     const need=prepared.filter(r=>!r.skipped&&['blank','none','multi','pending'].includes(r.matchStatus));
+     if(need.length){
+      st.textContent=`${need.length} row(s) need deliver location review…`;
+      const ok=await ctShowDeliverLocationReview(prepared,ctDeliverLocationItems());
+      if(!ok){st.textContent='Deliver location review cancelled.';go.disabled=false;return}
+      ctDropRows=prepared;
+     }
+     const runnable=prepared.filter(r=>!r.skipped&&r.sch);
+     if(!runnable.length){st.textContent='No devices left to deliver after review/skips.';go.disabled=false;return}
+     finalWhere=runnable[0].sch;
+    }else{
+     if(!finalWhere&&ctDeliverLocationItems().length===1){ls.value=ctDeliverLocationItems()[0].sch;finalWhere=chosen()}
+     if(!finalWhere){go.disabled=false;return st.textContent='Choose or enter a Deliver Location.'}
+    }
+   }else if(m.value==='both'){
+    // Locations resolve after DropMe; keep optional pre-chosen legacy location as a hint.
+    if(!remoteToken){try{const x=await ctRemoteDropContext();remoteToken=x.token;ctSyncDeliverLocationSelect(x.items||[])}catch(_){}}
+    prepared=ctDropPerRow?(ctDropRows||[]).map(r=>({...r})) : null;
+    if(!ctDropPerRow&&!finalWhere&&ctDeliverLocationItems().length===1){ls.value=ctDeliverLocationItems()[0].sch;finalWhere=chosen()}
+    if(!confirm(`This will perform TWO status changes per device:\nFixed/QC → DropMe → Delivered\n${ctDropPerRow?'Locations: matched from Col B after DropMe':(finalWhere?'Location: '+finalWhere:'Location: chosen after DropMe')}\nDevices: ${ctDropAssets.length}\n\nContinue?`)){go.disabled=false;return}
+   }else if(!remoteToken){
+    try{const x=await ctRemoteDropContext();remoteToken=x.token}catch(_){}
+   }
+   const batch=ctCreateBatch(m.value,remoteToken,finalWhere,ctDropPerRow?(prepared||ctDropRows):null);
+   if(!batch.assets.length){go.disabled=false;return st.textContent='No devices to process.'}
+   ctClearWorkflowCache();await ctGetWorkflowPage(ctRouteUrl('/createdrop')).catch(()=>{});
+   if(m.value==='deliver'&&batch.deliveryUrl)await ctGetWorkflowPage(batch.deliveryUrl).catch(()=>{});
+   ctDropActiveBatchId=batch.id;ctUpdateDropStats(batch);st.textContent=`Starting ${batch.assets.length} device(s)...`;
+   await ctRunDropBatchInline(batch.id);
+  }catch(e){const x=ctDropActiveBatchId?load(ctDropActiveBatchId):null;if(x){x.running=false;save(x)}st.textContent='Processor error: '+(e?.message||String(e));console.error('[Cell Tech Power Processor]',e)}
+  finally{go.disabled=false}
+ };
  c.querySelector('#ct_tools_drop_pause').onclick=()=>{const x=latest();if(!x||x.finishedAt)return;x.paused=!x.paused;save(x);st.textContent=x.paused?'Batch paused.':'Batch resumed.'};c.querySelector('#ct_tools_drop_stop').onclick=()=>{const x=latest();if(!x||x.finishedAt)return;if(confirm('Stop the current batch? Completed results will be kept.')){x.stop=true;save(x);st.textContent='Stop requested.'}};c.querySelector('#ct_tools_drop_report').onclick=()=>{const x=latest();if(!x)alert('No batch results found.');else modal(x)}}
 function ctRenderPartsTool(c){
  const s=ctPartsStats(),state=ctState();
