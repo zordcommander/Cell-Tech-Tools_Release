@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.17
+// @version      2.31.18
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -154,6 +154,19 @@ function rgBuildFormPayload(form,asset){
  body.set(assetField,String(asset));
  return {body,assetField};
 }
+function ctPageHasAssetForm(html){
+ try{return!!doc(html).querySelector('input[name="assetid"],input[name="asset_id"],input[name="asset"],input[name="serial"],input[name="serialnumber"],input[name="serial_number"],input[type="text"],input[type="search"]')}catch(_){return false}
+}
+function ctInvalidateWorkflowCache(pageUrl){
+ const keys=new Set([String(pageUrl||'')]);
+ try{
+  const u=new URL(String(pageUrl||''),location.href);
+  keys.add(u.href.split('#')[0]);
+  keys.add(u.origin+u.pathname.replace(/\/+$/,''));
+  keys.add(ctRouteUrl(u.pathname.replace(/\/+$/,'')||'/'));
+ }catch(_){}
+ for(const k of keys){if(k)CT_WORKFLOW_CACHE.delete(k)}
+}
 async function rgSubmitWorkflowPage(pageUrl,asset,actionHint){
  const submitOnce=async(force=false)=>{
   const page=await ctGetWorkflowPage(pageUrl,force);
@@ -179,8 +192,31 @@ async function rgSubmitWorkflowPage(pageUrl,asset,actionHint){
  };
  let out=await submitOnce(false);
  // Laravel 419 means the cached CSRF token expired. Refresh only then.
- if(out.status===419){CT_WORKFLOW_CACHE.delete(String(pageUrl));out=await submitOnce(true)}
+ if(out.status===419){ctInvalidateWorkflowCache(pageUrl);out=await submitOnce(true)}
+ // After each submit, keep the continue-page cache fresh (CSRF). Prefer response HTML when it still has the form; otherwise force the next device to GET again.
+ if(out.ok&&out.html&&ctPageHasAssetForm(out.html)){
+  ctCacheWorkflowHtml(pageUrl,{ok:true,status:out.status,url:out.url||pageUrl,html:out.html});
+  if(out.url&&String(out.url)!==String(pageUrl))ctCacheWorkflowHtml(out.url,{ok:true,status:out.status,url:out.url,html:out.html});
+ }else{
+  ctInvalidateWorkflowCache(pageUrl);
+  if(out.url)ctInvalidateWorkflowCache(out.url);
+ }
  return out;
+}
+function ctLockDropContinueUrl(b,responseUrl,responseHtml,status){
+ // After the first DropMe submit, RG often moves to /dropmedev and stays there.
+ if(!b||!responseUrl)return;
+ try{
+  const u=new URL(responseUrl,b.dropUrl||location.href);
+  const path=u.pathname.toLowerCase().replace(/\/+$/,'');
+  if(!/\/dropmedev$/.test(path))return;
+  const next=ctRouteUrl('/dropmedev');
+  if(responseHtml&&ctPageHasAssetForm(responseHtml))ctCacheWorkflowHtml(next,{ok:true,status:status||200,url:responseUrl,html:responseHtml});
+  else ctInvalidateWorkflowCache(next);
+  if(String(b.dropUrl||'')===next)return;
+  b.dropUrl=next;
+  try{save(b)}catch(_){}
+ }catch(_){}
 }
 async function dropStage(b,a){
  const pf=ctSpeedProfile();
@@ -190,19 +226,53 @@ async function dropStage(b,a){
   if(rgIsDropMeStatus(before.status))return {ok:true,result:'ALREADY DROPPED',msg:'RepairGenie reports this device is already Inbound / DropMe. Drop step skipped so delivery can continue.',status:'DropMe'};
   if(rgStatusKey(before.status)!=='fixed')return {ok:false,result:'FAILED',msg:`Current RepairGenie status is ${before.status}; expected Fixed or Inbound/DropMe. No status change attempted.`,status:before.status};
  }
- const pageUrl=ctRouteUrl('/createdrop');
+ // First device: /createdrop  After success RG often lands on /dropmedev and stays there.
+ const latest=b?.id?load(b.id):b;
+ const pageUrl=(latest?.dropUrl)||b.dropUrl||ctRouteUrl('/createdrop');
  const r=await rgSubmitWorkflowPage(pageUrl,a,/dropmedev|createdrop/i);
  let parsed=r.ok?parseDrop(a,r.html):{ok:false,result:'FAILED',msg:r.msg||('HTTP '+r.status)};
  if(parsed.result==='ALREADY DELIVERED')return parsed;
  if(r.ok&&!parsed.ok&&rgResponseShowsInbound(r.html))parsed={ok:true,result:'ALREADY DROPPED',msg:'RepairGenie indicates this device is already Inbound / DropMe. Continuing to delivery.',status:'DropMe'};
+ if(r.ok&&(parsed.ok||/\/dropmedev/i.test(r.url||'')))ctLockDropContinueUrl(latest||b,r.url,r.html,r.status);
  // Fast/Turbo trust an explicit RepairGenie success response and only use the API when the page is ambiguous.
  if(parsed.ok&&!pf.verify)return parsed;
  const verified=await rgWaitForStatus(b,a,['DropMe','Delivered']);
  if(verified.ok){
+  if(r.ok)ctLockDropContinueUrl(latest||b,r.url,r.html,r.status);
   if(rgIsDeliveredStatus(verified.status))return {ok:true,result:'ALREADY DELIVERED',msg:'Device is already Delivered (verified by RepairGenie API).',status:'Delivered'};
   if(rgIsDropMeStatus(verified.status))return {ok:true,result:parsed.result==='ALREADY DROPPED'?'ALREADY DROPPED':'DROPPED',msg:(parsed.msg?parsed.msg+' ':'')+'Verified Inbound / DropMe by RepairGenie API.',status:'DropMe'};
  }
  return parsed;
+}
+function ctWorkflowPathKey(url){
+ try{const u=new URL(String(url||''),location.href);return u.origin+u.pathname.replace(/\/+$/,'')}catch(_){return String(url||'')}
+}
+function ctCacheWorkflowHtml(url,page){
+ if(!url||!page?.html)return;
+ const key=String(url);
+ CT_WORKFLOW_CACHE.set(key,page);
+ try{
+  const u=new URL(url,location.href);
+  const bare=u.origin+u.pathname.replace(/\/+$/,'');
+  if(bare&&bare!==key)CT_WORKFLOW_CACHE.set(bare,{...page,url:page.url||url});
+  const route=ctRouteUrl(u.pathname.replace(/\/+$/,'')||'/');
+  if(route&&route!==key)CT_WORKFLOW_CACHE.set(route,{...page,url:page.url||url});
+ }catch(_){}
+}
+function ctLockDeliverContinueUrl(b,responseUrl,responseHtml,status){
+ // After the first Delivered submit, RG moves to /dropdevice and stays there for the rest.
+ if(!b||!responseUrl)return;
+ try{
+  const u=new URL(responseUrl,b.deliveryUrl||location.href);
+  const path=u.pathname.toLowerCase().replace(/\/+$/,'');
+  if(!/\/dropdevice$/.test(path))return;
+  const next=ctRouteUrl('/dropdevice');
+  if(responseHtml&&ctPageHasAssetForm(responseHtml))ctCacheWorkflowHtml(next,{ok:true,status:status||200,url:responseUrl,html:responseHtml});
+  else ctInvalidateWorkflowCache(next);
+  if(String(b.deliveryUrl||'')===next)return;
+  b.deliveryUrl=next;
+  try{save(b)}catch(_){}
+ }catch(_){}
 }
 async function deliverStage(b,a,knownInbound=false){
  const pf=ctSpeedProfile();
@@ -215,12 +285,18 @@ async function deliverStage(b,a,knownInbound=false){
    if(!rgIsDropMeStatus(before.status))return {ok:false,result:'FAILED',msg:`Current RepairGenie status is ${before.status}; expected Inbound / DropMe before delivery. No delivery attempted.`,status:before.status};
   }
  }
- const deliverUrl=b.deliveryUrl||ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(b.location||''));
+ // First device: /dropmeschoolsdev?sch=...  After success RG lands on /dropdevice and stays there.
+ const latest=b?.id?load(b.id):b;
+ const deliverUrl=(latest?.deliveryUrl)||b.deliveryUrl||ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(b.location||''));
  const r=await rgSubmitWorkflowPage(deliverUrl,a,/dropmeschoolsdev|dropdevice/i);
  const parsed=r.ok?parseDeliver(a,r.html,b.location):{ok:false,result:'FAILED',msg:r.msg||('HTTP '+r.status)};
+ if(r.ok&&(parsed.ok||/\/dropdevice/i.test(r.url||'')))ctLockDeliverContinueUrl(latest||b,r.url,r.html,r.status);
  if(parsed.ok&&!pf.verify)return parsed;
  const verified=await rgWaitForStatus(b,a,['Delivered']);
- if(verified.ok)return {ok:true,result:parsed.ok&&parsed.result==='ALREADY DELIVERED'?'ALREADY DELIVERED':'DELIVERED',msg:(parsed.msg?parsed.msg+' ':'')+'Submitted through '+deliverUrl+' and verified Delivered by RepairGenie API.',status:'Delivered'};
+ if(verified.ok){
+  if(r.ok)ctLockDeliverContinueUrl(latest||b,r.url,r.html,r.status);
+  return {ok:true,result:parsed.ok&&parsed.result==='ALREADY DELIVERED'?'ALREADY DELIVERED':'DELIVERED',msg:(parsed.msg?parsed.msg+' ':'')+'Submitted through '+deliverUrl+' and verified Delivered by RepairGenie API.',status:'Delivered'};
+ }
  return parsed;
 }
 function summary(b){const total=b.assets.length,complete=b.results.filter(x=>x.final==='COMPLETE').length,partial=b.results.filter(x=>x.final==='PARTIAL').length,failed=b.results.filter(x=>x.final==='FAILED').length,already=b.results.filter(x=>x.drop?.includes('ALREADY')||x.deliver?.includes('ALREADY')).length;return {total,processed:b.results.length,complete,partial,failed,already,success:b.results.length===total&&!failed&&!partial}}
@@ -311,7 +387,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.17'}catch(_){return'2.31.17'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.18'}catch(_){return'2.31.18'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1066,48 +1142,207 @@ function ctRepairGenieBase(){const p=location.pathname.toLowerCase();return loca
 function ctRouteUrl(path){path=String(path||'');if(/^https?:\/\//i.test(path))return path;return ctRepairGenieBase()+(path.startsWith('/')?path:'/'+path)}
 async function ctFetchText(path){try{const r=await fetch(ctRouteUrl(path),{credentials:'include',cache:'no-store',redirect:'follow'});if(!r.ok)return'';return await r.text()}catch(e){console.warn('[Cell Tech] RepairGenie page fetch failed:',path,e);return''}}
 function ctExtractToken(d){return d.querySelector('input[name="_token"]')?.value||d.querySelector('meta[name="csrf-token"]')?.content||''}
-function ctExtractDeliverLocationsFromDrop(d,baseUrl){
+function ctIsDeliverLocationPath(pathname){
+ const p=String(pathname||'').toLowerCase().replace(/\/+$/,'');
+ return /\/dropmeschoolsdev$/.test(p)||/\/dropmeschools$/.test(p)||/\/dropdevice$/.test(p)||/\/dropmedev$/.test(p);
+}
+function ctDecodeSchParam(v){
+ try{return decodeURIComponent(String(v||'').replace(/\+/g,' ')).replace(/\s+/g,' ').trim()}catch(_){return String(v||'').replace(/\+/g,' ').replace(/\s+/g,' ').trim()}
+}
+function ctSchFromSearchParams(params){
+ if(!params)return'';
+ return ctDecodeSchParam(params.get('sch')||params.get('school')||params.get('location')||'');
+}
+function ctDeliverUrlForSch(sch,hintUrl){
+ if(hintUrl)try{
+  const u=new URL(hintUrl,location.href);
+  if(ctIsDeliverLocationPath(u.pathname)||ctSchFromSearchParams(u.searchParams)){
+   if(!ctSchFromSearchParams(u.searchParams))u.searchParams.set('sch',sch);
+   return u.href;
+  }
+ }catch(_){}
+ return ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(sch));
+}
+function ctLooksLikeSchoolOption(value,label){
+ const v=String(value||'').trim(),l=String(label||'').trim();
+ if(!v&&!l)return false;
+ if(/^(select|choose|pick|all|none|--|\s*)$/i.test(v)||/^(select|choose|pick a school|select school|select a school|--)/i.test(l))return false;
+ if(/^\d+$/.test(v)&&(!l||l===v))return false;
+ return true;
+}
+function ctAddSchoolsFromSelect(sel,add){
+ if(!sel||!sel.options?.length)return 0;
+ const onchange=String(sel.getAttribute('onchange')||sel.getAttribute('onChange')||'');
+ const name=String(sel.getAttribute('name')||sel.id||'').toLowerCase();
+ const looksSchool=/^(sch|school|location|site|deliver)/i.test(name)||/dropmeschools|sch\s*=/i.test(onchange);
+ let added=0;
+ for(const o of sel.options){
+  const label=(o.textContent||'').replace(/\s+/g,' ').trim();
+  const value=ctDecodeSchParam(o.value||'');
+  if(!ctLooksLikeSchoolOption(value||label,label))continue;
+  // Prefer option value when it is a real school key; else use visible label.
+  const sch=value&&!/^(0|-1)$/.test(value)?value:label;
+  if(!ctLooksLikeSchoolOption(sch,label))continue;
+  if(!looksSchool&&sel.options.length<3)continue;
+  add(label||sch,sch,'');
+  added++;
+ }
+ return added;
+}
+function ctExtractDeliverLocationsFromDrop(d,baseUrl,rawHtml){
  const found=[];
  const add=(name,sch,url)=>{
   name=String(name||sch||'').replace(/\s+/g,' ').trim();
   sch=String(sch||name||'').replace(/\s+/g,' ').trim();
   if(!name||!sch)return;
+  if(/^(select|choose|all|none|--)/i.test(sch)||/^(select|choose|pick a school|select school)/i.test(name))return;
   const key=sch.toLowerCase();
   if(found.some(x=>x.sch.toLowerCase()===key))return;
-  found.push({name,sch,url:url||ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(sch))});
+  found.push({name,sch,url:ctDeliverUrlForSch(sch,url)});
  };
- for(const a of d.querySelectorAll('a[href]')){
+ const tryHref=(href,label,loose=false)=>{
   try{
-   const u=new URL(a.getAttribute('href')||'',baseUrl||location.origin);
-   if(!/\/dropmeschoolsdev$/i.test(u.pathname))continue;
-   const sch=u.searchParams.get('sch');
+   const u=new URL(String(href||'').trim(),baseUrl||location.href);
+   if(/\/search(?:\/|$)/i.test(u.pathname)||/\/login(?:\/|$)/i.test(u.pathname))return false;
+   const sch=ctSchFromSearchParams(u.searchParams);
+   if(!sch)return false;
+   if(!loose&&!ctIsDeliverLocationPath(u.pathname)&&!/[?&]sch=/i.test(String(href||'')))return false;
+   if(loose&&!ctIsDeliverLocationPath(u.pathname)&&!/drop|deliver|school/i.test(u.pathname+u.search))return false;
+   add(label||sch,sch,u.href);
+   return true;
+  }catch(_){return false}
+ };
+ const tryEmbedded=(text,label)=>{
+  const src=String(text||'');
+  if(!src)return;
+  const re=/(?:dropmeschools(?:dev)?|dropdevice|dropmedev)\/?(?:\?[^'"\s<>]*\bsch=|\?sch=)([^'"&\s<>]+)/gi;
+  let m;while((m=re.exec(src))){
+   const sch=ctDecodeSchParam(m[1]||'');
    if(!sch)continue;
-   add((a.textContent||'').trim()||sch,sch,u.href);
-  }catch(_){}
+   add(label||sch,sch,'');
+  }
+ };
+ // Spartanburg-style /drop: school list is a <select>; choosing one goes to /dropmeschoolsdev?sch=...
+ const namedSelects=[...d.querySelectorAll('select[name="sch"],select[name="school"],select[name="location"],select[name="site"],select#sch,select#school,select#location')];
+ const allSelects=[...d.querySelectorAll('select')];
+ for(const sel of namedSelects)ctAddSchoolsFromSelect(sel,add);
+ if(!found.length){
+  // Prefer the select whose onchange navigates to dropmeschoolsdev, else the largest plausible list.
+  const ranked=[...allSelects].map(sel=>{
+   const onchange=String(sel.getAttribute('onchange')||'');
+   const score=(/dropmeschools|sch\s*=/i.test(onchange)?100:0)+Math.min(sel.options.length,50);
+   return {sel,score};
+  }).filter(x=>x.sel.options.length>=2).sort((a,b)=>b.score-a.score);
+  for(const {sel} of ranked){
+   ctAddSchoolsFromSelect(sel,add);
+   if(found.length)break;
+  }
+ }
+ for(const a of d.querySelectorAll('a[href]')){
+  const label=(a.textContent||'').replace(/\s+/g,' ').trim();
+  if(!tryHref(a.getAttribute('href'),label,false))tryHref(a.getAttribute('href'),label,true);
+  tryEmbedded(a.getAttribute('href'),label);
+ }
+ for(const el of d.querySelectorAll('[data-href],[data-url],[data-sch],[onclick]')){
+  const label=(el.textContent||'').replace(/\s+/g,' ').trim();
+  const schAttr=ctDecodeSchParam(el.getAttribute('data-sch')||'');
+  if(schAttr)add(label||schAttr,schAttr,'');
+  tryHref(el.getAttribute('data-href')||el.getAttribute('data-url')||'',label,true);
+  tryEmbedded(el.getAttribute('onclick')||el.getAttribute('onchange')||'',label);
  }
  for(const f of d.querySelectorAll('form')){
   try{
-   const action=new URL(f.getAttribute('action')||'',baseUrl||location.origin);
-   if(!/\/dropmeschoolsdev$/i.test(action.pathname))continue;
-   const sch=f.querySelector('[name="sch"]')?.value||action.searchParams.get('sch');
-   if(!sch)continue;
-   const label=(f.closest('tr,li,.row,.panel,.card')?.textContent||'').replace(/\s+/g,' ').trim();
-   add(label||sch,sch,action.href+(action.search?'':'?sch='+encodeURIComponent(sch)));
+   const actionRaw=f.getAttribute('action')||'';
+   const action=new URL(actionRaw,baseUrl||location.href);
+   const sch=ctDecodeSchParam(f.querySelector('[name="sch"],[name="school"],[name="location"]')?.value||'')||ctSchFromSearchParams(action.searchParams);
+   if(sch&&(ctIsDeliverLocationPath(action.pathname)||/[?&]sch=/i.test(actionRaw)||f.querySelector('[name="sch"],[name="school"],[name="location"]'))){
+    const label=(f.closest('tr,li,.row,.panel,.card,.list-group-item,td')?.textContent||f.textContent||'').replace(/\s+/g,' ').trim();
+    add(label||sch,sch,action.href+(action.search?'':'?sch='+encodeURIComponent(sch)));
+   }else tryEmbedded(actionRaw,(f.textContent||'').replace(/\s+/g,' ').trim());
   }catch(_){}
  }
+ if(!found.length&&rawHtml){
+  tryEmbedded(rawHtml,'');
+  // Fallback: option tags inside any select on the raw /drop HTML
+  const optRe=/<option[^>]*\svalue=["']([^"']+)["'][^>]*>([^<]*)<\/option>/gi;
+  let om,optCount=0;while((om=optRe.exec(rawHtml))){
+   const sch=ctDecodeSchParam(om[1]),label=String(om[2]||'').replace(/\s+/g,' ').trim();
+   if(!ctLooksLikeSchoolOption(sch,label))continue;
+   add(label||sch,sch,'');
+   optCount++;
+  }
+  if(optCount)console.info('[Cell Tech Power Processor] Parsed',optCount,'school option(s) from /drop HTML');
+ }
  return found;
+}
+function ctPathLooksLikeDrop(pathname){
+ const p=String(pathname||'').toLowerCase().replace(/\/+$/,'');
+ return /\/drop$/.test(p)||/\/dropdevice$/.test(p)||/\/dropmeschools(?:dev)?$/.test(p);
+}
+function ctFindDropMenuUrls(){
+ const urls=[];
+ const add=(href)=>{
+  try{
+   const u=new URL(String(href||'').trim(),location.href);
+   if(u.origin!==location.origin)return;
+   if(!/drop/i.test(u.pathname))return;
+   if(/dropped|dropme(?!schools|device)|createdrop/i.test(u.pathname)&&!/dropmeschools|dropdevice|^\/(?:rgsite\/)?drop$/i.test(u.pathname))return;
+   const hrefAbs=u.href.split('#')[0];
+   if(!urls.includes(hrefAbs))urls.push(hrefAbs);
+  }catch(_){}
+ };
+ for(const a of document.querySelectorAll('#side-menu a, .navbar-static-side a, .sidebar a, .sidebar-nav a, aside a')){
+  const label=(a.textContent||'').replace(/\s+/g,' ').trim();
+  const href=a.getAttribute('href')||'';
+  if(/drop\s*devices/i.test(label)||/^drop$/i.test(label))add(href);
+  else if(/\/(?:rgsite\/)?drop(?:\/|$|\?)/i.test(href)||/dropmeschools|dropdevice/i.test(href))add(href);
+ }
+ return urls;
 }
 async function ctRemoteDropContext(){
  let tok=token();
  ctDeliverLocationMap={};
- const dropPage=await rgFetchPage(ctRouteUrl('/drop'));
- if(!dropPage.ok)throw Error('Could not open RepairGenie /drop page. HTTP '+dropPage.status);
- const d=doc(dropPage.html);
- tok=tok||ctExtractToken(d);
- const items=ctExtractDeliverLocationsFromDrop(d,dropPage.url);
- for(const item of items)ctDeliverLocationMap[item.sch]=item;
- const locations=items.map(x=>x.name||x.sch);
- return {token:tok,locations,items,source:dropPage.url};
+ const tried=[];
+ const merge=[];
+ const take=(items,source)=>{
+  for(const item of items||[]){
+   if(!merge.some(x=>x.sch.toLowerCase()===item.sch.toLowerCase()))merge.push(item);
+  }
+  if(items?.length&&!tried.includes(source))tried.push(source);
+ };
+ const ingestPage=async(url)=>{
+  if(!url||tried.includes(url))return null;
+  tried.push(url);
+  const page=await rgFetchPage(url);
+  if(!page.ok)return page;
+  if(/\/login(?:\/|$|\?)/i.test(page.url)||/(?:name|id)=["']password["']/i.test(page.html||'')){
+   throw Error('RepairGenie drop page redirected to login. Refresh the page, sign in, then Refresh Deliver Locations.');
+  }
+  const d=doc(page.html);
+  tok=tok||ctExtractToken(d);
+  take(ctExtractDeliverLocationsFromDrop(d,page.url,page.html),page.url);
+  return page;
+ };
+ // /drop holds the school dropdown; /dropmeschoolsdev?sch=... is the serial submit page after pick.
+ const candidates=[ctRouteUrl('/drop'),...ctFindDropMenuUrls(),ctRouteUrl('/dropmeschoolsdev'),ctRouteUrl('/dropdevice')];
+ let lastPage=null,lastErr=null;
+ for(const url of candidates){
+  try{
+   const page=await ingestPage(url);
+   if(page)lastPage=page;
+   if(merge.length)break;
+  }catch(e){lastErr=e;if(/login/i.test(e?.message||''))throw e}
+ }
+ if(!merge.length&&ctPathLooksLikeDrop(location.pathname)){
+  take(ctExtractDeliverLocationsFromDrop(document,location.href,document.documentElement?.outerHTML||''),location.href);
+ }
+ if(!merge.length&&lastErr&&!lastPage)throw lastErr;
+ if(!lastPage&&!merge.length)throw Error('Could not open RepairGenie /drop page.');
+ for(const item of merge)ctDeliverLocationMap[item.sch]=item;
+ const locations=merge.map(x=>x.name||x.sch);
+ const source=tried.find(u=>merge.length&&u)||lastPage?.url||ctRouteUrl('/drop');
+ if(!merge.length)console.warn('[Cell Tech Power Processor] No deliver locations parsed. Tried:',tried);
+ return {token:tok,locations,items:merge,source,tried};
 }
 function ctSetDropLiveStatus(message){const el=document.getElementById(CT_TOOL.dropStatus);if(el)el.textContent=message}
 async function ctRunDropBatchInline(i){
@@ -1152,7 +1387,7 @@ function ctDropReadyMessage(mode,locationName){if(!ctDropAssets.length)return'Lo
 function ctUpdateDropStats(batch=null){const w=document.getElementById(CT_TOOL.workspace);if(!w)return;const vals=batch?summary(batch):{total:ctDropAssets.length,processed:0,complete:0,partial:0,failed:0};for(const [id,v] of Object.entries({ct_tools_drop_total:vals.total,ct_tools_drop_processed:vals.processed,ct_tools_drop_complete:vals.complete,ct_tools_drop_partial:vals.partial,ct_tools_drop_failed:vals.failed})){const el=w.querySelector('#'+id);if(el)el.textContent=v}}
 function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('drop'))}</h2><div>Run QC/Fixed → DropMe, Inbound/DropMe → Delivered, or the full two-stage process from anywhere in this RepairGenie site. The processor checks each device first: devices already Inbound/DropMe skip the Drop step and continue directly to Delivered.</div><div class="ctw-grid" style="margin-top:14px"><div><label>Workflow</label><select id="ct_tools_mode"><option value="drop">Fixed/QC → DropMe</option><option value="deliver">Inbound/DropMe → Delivered</option><option value="both">Fixed/QC → DropMe → Delivered</option></select></div><div><label>Spreadsheet</label><input id="${CT_TOOL.dropFile}" type="file" accept=".csv,.xlsx,.xlsm,.xls,.txt"></div><div><label>Deliver Location</label><select id="ct_tools_location"><option value="">Loading locations...</option></select><input id="ct_tools_location_manual" type="text" placeholder="Or type exact deliver location" style="margin-top:6px"><button id="ct_tools_refresh_locations" style="margin-top:6px;width:100%">Refresh Deliver Locations</button></div></div><div class="ctw-actions"><button id="ct_tools_drop_go" class="go" disabled>${esc(ctActionLabel('UNLEASH THE POWER','START PROCESSOR'))}</button><button id="ct_tools_drop_pause" class="warn">PAUSE / RESUME</button><button id="ct_tools_drop_stop" class="bad">STOP</button><button id="ct_tools_drop_report">View Battle Report</button></div><div id="${CT_TOOL.dropStatus}" class="ctw-status">Load a spreadsheet.</div><div class="ctw-stats"><div class="ctw-stat">Total<b id="ct_tools_drop_total">${ctDropAssets.length||0}</b></div><div class="ctw-stat">Processed<b id="ct_tools_drop_processed">0</b></div><div class="ctw-stat">Complete<b id="ct_tools_drop_complete">0</b></div><div class="ctw-stat">Partial<b id="ct_tools_drop_partial">0</b></div><div class="ctw-stat">Failed<b id="ct_tools_drop_failed">0</b></div></div></div>`;
  const f=c.querySelector('#'+CT_TOOL.dropFile),m=c.querySelector('#ct_tools_mode'),ls=c.querySelector('#ct_tools_location'),lm=c.querySelector('#ct_tools_location_manual'),go=c.querySelector('#ct_tools_drop_go'),st=c.querySelector('#'+CT_TOOL.dropStatus),refresh=c.querySelector('#ct_tools_refresh_locations');let remoteToken='';const chosen=()=>lm.value.trim()||ls.value.trim();const ready=()=>{const where=chosen();if(!ctDropAssets.length){st.textContent='Load a spreadsheet with Asset IDs / serial numbers in Column A.';go.disabled=true;return}if(m.value!=='drop'&&!where){st.textContent=`Ready: ${ctDropAssets.length} device(s), but choose or enter a Deliver Location.`;go.disabled=true;return}st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}.`;go.disabled=false};
- const loadContext=async()=>{const previous=chosen();ls.innerHTML='<option value="">Loading locations...</option>';try{const x=await ctRemoteDropContext();remoteToken=x.token;ctGetWorkflowPage(ctRouteUrl('/createdrop')).catch(()=>{});ls.innerHTML='<option value="">-- Select Deliver Location --</option>'+x.items.map(v=>`<option value="${esc(v.sch)}">${esc(v.name||v.sch)}</option>`).join('');if(previous&&x.items.some(v=>v.sch.toLowerCase()===previous.toLowerCase()||(v.name||'').toLowerCase()===previous.toLowerCase())){const hit=x.items.find(v=>v.sch.toLowerCase()===previous.toLowerCase()||(v.name||'').toLowerCase()===previous.toLowerCase());ls.value=hit.sch}else if(x.items.length===1)ls.value=x.items[0].sch;if(!x.locations.length)ls.innerHTML='<option value="">No Deliver Locations found on /drop</option>';if(!x.locations.length&&m.value!=='drop')st.textContent=`No Deliver Locations were found on RepairGenie /drop. Type the exact location below.`;else ready()}catch(e){ls.innerHTML='<option value="">Deliver Location lookup failed</option>';st.textContent='Deliver Location lookup failed: '+(e?.message||String(e));ready()}};
+ const loadContext=async()=>{const previous=chosen();ls.innerHTML='<option value="">Loading locations...</option>';try{const x=await ctRemoteDropContext();remoteToken=x.token;ctGetWorkflowPage(ctRouteUrl('/createdrop')).catch(()=>{});ls.innerHTML='<option value="">-- Select Deliver Location --</option>'+x.items.map(v=>`<option value="${esc(v.sch)}">${esc(v.name||v.sch)}</option>`).join('');if(previous&&x.items.some(v=>v.sch.toLowerCase()===previous.toLowerCase()||(v.name||'').toLowerCase()===previous.toLowerCase())){const hit=x.items.find(v=>v.sch.toLowerCase()===previous.toLowerCase()||(v.name||'').toLowerCase()===previous.toLowerCase());ls.value=hit.sch}else if(x.items.length===1)ls.value=x.items[0].sch;if(!x.locations.length){ls.innerHTML='<option value="">No Deliver Locations found on /drop</option>';if(m.value!=='drop')st.textContent=`No Deliver Locations parsed from ${(x.tried&&x.tried.length)?x.tried.join(' | '):(x.source||'/drop')}. Open Drop Devices on this RG, or type the exact location below.`;else ready()}else ready()}catch(e){ls.innerHTML='<option value="">Deliver Location lookup failed</option>';st.textContent='Deliver Location lookup failed: '+(e?.message||String(e));ready()}};
  f.onchange=async()=>{try{st.textContent='Reading spreadsheet...';ctDropActiveBatchId='';ctDropAssets=await readFile(f.files[0]);ctDropFilename=f.files[0].name;if(!ctDropAssets.length)throw Error('No Asset IDs / serials found in Column A.');ctUpdateDropStats(null);ready()}catch(e){ctDropActiveBatchId='';ctDropAssets=[];ctDropFilename='';ctUpdateDropStats(null);st.textContent=e.message;go.disabled=true}};m.onchange=ready;ls.onchange=()=>{if(ls.value)lm.value='';ready()};lm.oninput=ready;refresh.onclick=loadContext;loadContext();
  go.onclick=async()=>{if(!ctDropAssets.length)return st.textContent='Load a spreadsheet first.';const where=chosen();if(m.value!=='drop'&&!where)return st.textContent='Choose or enter a Deliver Location.';go.disabled=true;st.textContent='Preparing RepairGenie session...';if(!remoteToken){const x=await ctRemoteDropContext();remoteToken=x.token;if(!where&&x.items?.length===1){ls.value=x.items[0].sch}}const finalWhere=chosen();if(m.value!=='drop'&&!finalWhere){go.disabled=false;return st.textContent='Choose or enter a Deliver Location.'}if(m.value==='both'&&!confirm(`This will perform TWO status changes per device:\nFixed/QC → DropMe → Delivered\nLocation: ${finalWhere}\nDevices: ${ctDropAssets.length}\n\nContinue?`)){go.disabled=false;return}const batch=ctCreateBatch(m.value,remoteToken,finalWhere);ctClearWorkflowCache();await ctGetWorkflowPage(ctRouteUrl('/createdrop')).catch(()=>{});if(finalWhere)await ctGetWorkflowPage(batch.deliveryUrl).catch(()=>{});ctDropActiveBatchId=batch.id;ctUpdateDropStats(batch);st.textContent=`Starting ${batch.assets.length} device(s)...`;ctRunDropBatchInline(batch.id).catch(e=>{const x=load(batch.id);if(x){x.running=false;save(x)}st.textContent='Processor error: '+(e?.message||String(e));console.error('[Cell Tech Power Processor]',e)}).finally(()=>{go.disabled=false})};
  c.querySelector('#ct_tools_drop_pause').onclick=()=>{const x=latest();if(!x||x.finishedAt)return;x.paused=!x.paused;save(x);st.textContent=x.paused?'Batch paused.':'Batch resumed.'};c.querySelector('#ct_tools_drop_stop').onclick=()=>{const x=latest();if(!x||x.finishedAt)return;if(confirm('Stop the current batch? Completed results will be kept.')){x.stop=true;save(x);st.textContent='Stop requested.'}};c.querySelector('#ct_tools_drop_report').onclick=()=>{const x=latest();if(!x)alert('No batch results found.');else modal(x)}}
