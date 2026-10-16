@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.39
+// @version      2.31.42
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Shop Score, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -216,7 +216,26 @@ function rgRows(payload){if(Array.isArray(payload))return payload;if(Array.isArr
 function rgExactRow(rows,a){const n=rgNorm(a);return rows.find(x=>rgNorm(x?.assetid)===n||rgNorm(x?.MSB_tag)===n||rgNorm(x?.serialno)===n||rgNorm(x?.serial)===n)||rows[0]||null}
 async function rgStatusQuery(b,a,key){const cid=await rgCustomerId(b);if(!cid)return {available:false,status:null,row:null};const q=new URLSearchParams();for(const st of RG_STATUSES)q.append('status[]',st);q.set(key,a);const res=await apiGet(`${b.origin}/localapi/${cid}/getstatusworkorders?${q.toString()}`);if(!res.ok)return {available:false,status:null,row:null};const row=rgExactRow(rgRows(res.data),a);return {available:true,status:row?.progress||row?.status||null,row}}
 async function rgDeliveredQuery(b,a,key){const cid=await rgCustomerId(b);if(!cid)return {available:false,status:null,row:null};const q=new URLSearchParams([[key,a]]);const res=await apiGet(`${b.origin}/localapi/${cid}/getdelivered?${q.toString()}`);if(!res.ok)return {available:false,status:null,row:null};const row=rgExactRow(rgRows(res.data),a);return {available:true,status:row?'Delivered':null,row}}
-async function rgCurrentStatus(b,a){let anyAvailable=false;for(const key of ['assetid','serial']){const x=await rgStatusQuery(b,a,key);anyAvailable=anyAvailable||x.available;if(x.status)return {...x,source:'status-api'};const d=await rgDeliveredQuery(b,a,key);anyAvailable=anyAvailable||d.available;if(d.status)return {...d,source:'delivered-api'}}return {available:anyAvailable,status:null,row:null,source:anyAvailable?'api-no-match':'unavailable'}}
+async function rgCurrentStatus(b,a,opts){
+ // One status query (asset id, then serial only if that row is empty). Delivered API only when the caller is checking Delivered.
+ const wantDelivered=!!(opts&&opts.wantDelivered);
+ let anyAvailable=false;
+ for(const key of ['assetid','serial']){
+  const x=await rgStatusQuery(b,a,key);
+  anyAvailable=anyAvailable||x.available;
+  if(x.status)return {...x,source:'status-api'};
+  if(x.available&&key==='serial')break;
+ }
+ if(wantDelivered){
+  for(const key of ['assetid','serial']){
+   const d=await rgDeliveredQuery(b,a,key);
+   anyAvailable=anyAvailable||d.available;
+   if(d.status)return {...d,source:'delivered-api'};
+   if(d.available)break;
+  }
+ }
+ return {available:anyAvailable,status:null,row:null,source:anyAvailable?'api-no-match':'unavailable'};
+}
 
 const CT_SPEED_KEY='ct_rg_processing_speed';
 const CT_WORKFLOW_CACHE=new Map();
@@ -230,7 +249,7 @@ function rgIsDeliveredStatus(v){return rgStatusKey(v)==='delivered'}
 function rgIsReceivedStatus(v){return rgStatusKey(v)==='received'}
 function rgIsDropMeStatus(v){const k=rgStatusKey(v);return k==='dropme'||k==='inbound'||k==='dropped'}
 function rgResponseShowsInbound(h){const t=txt(doc(h)?.body||doc(h));return /\b(inbound|dropme|dropped)\b/i.test(t)&&!/not\s+(?:inbound|dropme|dropped)|cannot\s+(?:move|find)|failed|invalid/i.test(t)}
-async function rgWaitForStatus(b,a,wanted,attempts=null){const pf=ctSpeedProfile(),tries=attempts??pf.verifyAttempts,delays=pf.verifyDelays;let last=null;for(let i=0;i<tries;i++){if(i)await sleep(delays[Math.min(i,delays.length-1)]);const s=await rgCurrentStatus(b,a);last=s;if(s.available&&s.status&&wanted.some(w=>rgStatusKey(w)===rgStatusKey(s.status)))return {ok:true,...s};if(!s.available)return {ok:false,available:false,status:null,row:null}}return {ok:false,...(last||{available:false,status:null,row:null})}}
+async function rgWaitForStatus(b,a,wanted,attempts=null){const pf=ctSpeedProfile(),tries=attempts??pf.verifyAttempts,delays=pf.verifyDelays,wantDelivered=(wanted||[]).some(w=>rgStatusKey(w)==='delivered');let last=null;for(let i=0;i<tries;i++){if(i)await sleep(delays[Math.min(i,delays.length-1)]);const s=await rgCurrentStatus(b,a,{wantDelivered});last=s;if(s.available&&s.status&&wanted.some(w=>rgStatusKey(w)===rgStatusKey(s.status)))return {ok:true,...s};if(!s.available)return {ok:false,available:false,status:null,row:null}}return {ok:false,...(last||{available:false,status:null,row:null})}}
 async function rgFetchPage(url){
  const target=/^https?:\/\//i.test(String(url||''))?String(url):((b=>b)(location.origin)+(String(url||'').startsWith('/')?'':'/')+String(url||''));
  const r=await fetch(target,{method:'GET',credentials:'include',cache:'no-store',redirect:'follow',headers:{'Accept':'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8'}});
@@ -395,189 +414,6 @@ function ctAssetDeliverMeta(b,a){
  }
  return{sch:'',locationName:'',deliveryUrl:''};
 }
-function ctRowFieldCI(row,needles){
- if(!row||typeof row!=='object')return'';
- const map={};
- for(const [k,v] of Object.entries(row)){
-  if(v==null||typeof v==='object')continue;
-  map[String(k).toLowerCase().replace(/[^a-z0-9]/g,'')]=String(v).trim();
- }
- for(const n of needles){
-  const hit=map[String(n).toLowerCase().replace(/[^a-z0-9]/g,'')];
-  if(hit)return hit;
- }
- return'';
-}
-function ctBogusSchoolLabel(v){
- const t=String(v||'').replace(/[▲▼↑↓]/g,' ').replace(/\s+/g,' ').trim();
- if(!t)return true;
- if(/[▲▼↑↓]/.test(String(v||'')))return true;
- return /^(device|device type|model|serial|serial #|asset|asset id|status|progress|action|actions|select|choose|school|location|pickup|date|time|case|incident)$/i.test(t);
-}
-function ctLooksLikeSchoolKey(v){
- const t=String(v||'').trim();
- if(!t||t.length<3||t.length>120)return false;
- if(ctBogusSchoolLabel(t))return false;
- if(/^(true|false|null|undefined|yes|no|n\/a|none|select|choose|--)$/i.test(t))return false;
- if(/^\d{1,6}$/.test(t))return false; // bare numeric ids are not school keys
- if(/\([0-9]{2,}\)\s*$/.test(t))return true; // SchoolName(1234)
- if(/^[A-Za-z].*[A-Za-z]/.test(t)&&/\s/.test(t)&&t.length>=6)return true; // multi-word school name
- return false;
-}
-function ctSchoolFromStatusRow(row){
- // Bulk Web order: Pickup/Drop first, then Home School, then generic school/location.
- if(!row||typeof row!=='object')return'';
- const pickup=ctRowFieldCI(row,[
-  'pickuploc','pickup','pickup_drop','pickuplocation','pickupanddroplocation','pickupanddroplocation2',
-  'pickuplocation2','pickupid','pickupschool','pickupsites','droplocation','droplocation2','droploc'
- ]);
- if(pickup)return pickup;
- const home=ctRowFieldCI(row,[
-  'homeschool','home_school','homeschoolocation','homeschoolname','homeschoolid','schoolname','school',
-  'schoolocation','schoollocation','loc','location','locationname','sitename','site','assignedschool',
-  'assignedsite','building','customerlocation','wholename','school_name'
- ]);
- if(home)return home;
- // Status API often omits named pickup fields — scan any string that looks like a school key.
- for(const v of Object.values(row)){
-  if(typeof v!=='string'&&typeof v!=='number')continue;
-  const t=String(v).trim();
-  if(ctLooksLikeSchoolKey(t))return t;
- }
- return'';
-}
-function ctSchoolMatchAgainstDropList(hint){
- const list=ctDeliverLocationItems();
- if(!hint||!list.length)return null;
- const m=ctMatchDeliverLocation(hint,list);
- if(m.status==='auto'&&m.match)return m.match;
- return null;
-}
-let ctRepairsFilterNames=null;
-async function ctSchoolFromLiveTicket(asset){
- // Fast Clearer-style fallback: 1–2 /repairs queries + at most one detail page (not full Info Finder).
- try{
-  if(!ctRepairsFilterNames){
-   const base=await ctInfoFetchPage('/repairs');
-   ctRepairsFilterNames=base.html?ctInfoCandidateInputs(new DOMParser().parseFromString(base.html,'text/html')).slice(0,2):['msb','serial'];
-   if(!ctRepairsFilterNames.length)ctRepairsFilterNames=['msb','serial'];
-  }
-  for(const input of ctRepairsFilterNames){
-   const sp=new URLSearchParams();sp.set(input,String(asset));
-   const page=await ctInfoFetchPage('/repairs?'+sp.toString());
-   if(!page.html)continue;
-   const d=new DOMParser().parseFromString(page.html,'text/html');
-   const rows=ctInfoParseTableRows(d,asset,page.url);
-   for(const r of rows){
-    const pickup=String(r.pickup||'').trim(),school=String(r.school||'').trim();
-    if(pickup&&!ctBogusSchoolLabel(pickup))return{sch:pickup,source:'live-pickup'};
-    if(school&&!ctBogusSchoolLabel(school))return{sch:school,source:'live-school'};
-   }
-   const detail=ctInfoLinksFromDoc(d,page.url,asset).slice(0,1);
-   for(const u of detail){
-    const x=await ctInfoFetchPage(u);if(!x.html)continue;
-    const data=ctInfoParseDetail(x.html,x.url);
-    const pickup=String(data.pickup||'').trim(),school=String(data.school||'').trim();
-    if(pickup&&!ctBogusSchoolLabel(pickup))return{sch:pickup,source:'live-pickup'};
-    if(school&&!ctBogusSchoolLabel(school))return{sch:school,source:'live-school'};
-   }
-  }
- }catch(e){console.warn('[Cell Tech Power Processor] Live ticket school lookup failed:',e?.message||e)}
- return null;
-}
-async function ctResolveDeliverSchoolForAsset(b,asset){
- // Manual override → Col B → status row → live ticket page → match /drop list when available.
- const uiHint=ctUiDeliverLocationHint();
- const sheetRow=(b?.sheetRows||[]).find(r=>String(r.asset||'').toLowerCase()===String(asset||'').toLowerCase());
- const colB=String(sheetRow?.sch||sheetRow?.requested||'').trim();
- let hint='',source='';
- if(uiHint){hint=uiHint;source='manual'}
- else if(b?.locationOverride&&String(b.location||'').trim()){hint=String(b.location).trim();source='batch'}
- else if(colB){hint=colB;source='colB'}
- else{
-  try{
-   const st=await rgCurrentStatus(b,asset);
-   hint=ctSchoolFromStatusRow(st?.row)||'';
-   source='ticket';
-   if(!hint&&st?.row){
-    // Soft-match any status-row string against the /drop school list.
-    const list=ctDeliverLocationItems();
-    if(list.length){
-     for(const v of Object.values(st.row)){
-      if(typeof v!=='string'&&typeof v!=='number')continue;
-      const t=String(v).trim();if(!t)continue;
-      const hit=ctSchoolMatchAgainstDropList(t);
-      if(hit){hint=hit.sch;source='ticket-drop-match';break}
-     }
-    }
-    if(!hint)console.info('[Cell Tech Power Processor] No school on status row for',asset,'keys:',Object.keys(st.row));
-   }
-  }catch(_){hint=''}
-  if(!hint){
-   const live=await ctSchoolFromLiveTicket(asset);
-   if(live?.sch){hint=live.sch;source=live.source}
-  }
- }
- if(!hint||ctBogusSchoolLabel(hint))return null;
- const matched=ctSchoolMatchAgainstDropList(hint);
- if(matched){
-  return{sch:matched.sch,locationName:matched.name||matched.sch,deliveryUrl:matched.url||ctDeliverUrlForSch(matched.sch,''),source,auto:true};
- }
- return{sch:hint,locationName:hint,deliveryUrl:ctDeliverUrlForSch(hint,''),source,auto:true};
-}
-async function ctEnsureAssetDeliverMeta(b,asset){
- const key=String(asset||'').toLowerCase();
- if(!b.assetMeta)b.assetMeta={};
- const existing=b.assetMeta[key];
- if(existing?.skipped)return existing;
- if(existing?.sch)return existing;
- const resolved=await ctResolveDeliverSchoolForAsset(b,asset);
- if(!resolved?.sch)return existing||{sch:'',locationName:'',deliveryUrl:''};
- b.assetMeta[key]=resolved;
- if(!b.location){
-  b.location=resolved.sch;
-  b.locationName=resolved.locationName||resolved.sch;
-  b.deliveryUrl=resolved.deliveryUrl||ctDeliverUrlForSch(resolved.sch,'');
-  b.activeDeliverSch=resolved.sch;
- }
- try{if(b.id)save(b)}catch(_){}
- return resolved;
-}
-async function ctAutoResolveBatchDeliverSchools(batchId){
- let b=load(batchId);if(!b)return{ok:false,resolved:0,missing:0};
- let resolved=0,missing=0;
- const meta=b.assetMeta||{};
- for(const a of b.assets||[]){
-  const key=String(a||'').toLowerCase();
-  if(meta[key]?.skipped)continue;
-  if(meta[key]?.sch){resolved++;continue}
-  ctSetDropLiveStatus(`Auto-resolving deliver school from ticket: ${a}…`);
-  const hit=await ctResolveDeliverSchoolForAsset(b,a);
-  b=load(batchId)||b;
-  if(!b.assetMeta)b.assetMeta={};
-  if(hit?.sch){
-   b.assetMeta[key]=hit;
-   resolved++;
-   if(!b.location){
-    b.location=hit.sch;b.locationName=hit.locationName||hit.sch;
-    b.deliveryUrl=hit.deliveryUrl||ctDeliverUrlForSch(hit.sch,'');
-    b.activeDeliverSch=hit.sch;
-   }
-  }else missing++;
-  save(b);
- }
- b=load(batchId)||b;
- // Re-order assets by school when we have per-asset meta (multi-school batches stay sequential).
- if(b?.assetMeta&&Object.values(b.assetMeta).some(m=>m?.sch)){
-  const m=b.assetMeta;
-  b.assets=[...b.assets].sort((a,c)=>{
-   const ma=m[String(a).toLowerCase()]||{},mc=m[String(c).toLowerCase()]||{};
-   return String(ma.sch||'').localeCompare(String(mc.sch||''),undefined,{sensitivity:'base'})||String(a).localeCompare(String(c));
-  });
-  save(b);
- }
- return{ok:true,resolved,missing};
-}
 async function deliverStage(b,a,knownInbound=false){
  const pf=ctSpeedProfile();
  // Clearer-speed: Fast/Turbo skip pre-checks on deliver/deliver_recv (and after proven DropMe).
@@ -591,75 +427,41 @@ async function deliverStage(b,a,knownInbound=false){
    if(!rgIsDropMeStatus(before.status))return{ok:true,result:'SKIPPED',msg:`Current status is ${before.status}; expected Inbound / DropMe. Deliver skipped.`,status:before.status,skipped:true};
   }
  }
- let live=b?.id?load(b.id):b;
- let meta=ctAssetDeliverMeta(live||b,a);
- if(!meta.sch&&!meta.skipped){
-  try{await ctEnsureAssetDeliverMeta(live||b,a)}catch(_){}
-  live=b?.id?load(b.id):live||b;
-  meta=ctAssetDeliverMeta(live||b,a);
- }
- let locSch=meta.sch||live?.location||b.location||'';
- if(!locSch)return{ok:false,result:'FAILED',msg:'No deliver school on ticket (Pickup/Home School) and none was provided. No delivery attempted.'};
- let locLabel=meta.locationName||locSch||b.location||'';
- // Prefer a school page that actually contains the asset form (Pitt display names often 404 the form).
- let resolvedPage=null;
- try{resolvedPage=await ctResolveDeliverPageForSchool(locSch)}catch(e){console.warn('[Cell Tech Power Processor] deliver page resolve:',e?.message||e)}
- if(resolvedPage?.sch){locSch=resolvedPage.sch;locLabel=resolvedPage.sch}
- const startUrl=resolvedPage?.url||meta.deliveryUrl||ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(locSch));
- // First device at a school: /dropmeschoolsdev?sch=...  After success RG lands on /dropdevice and stays there until school changes.
- const latest=live||b;
- let deliverUrl;
- if(latest?.activeDeliverSch&&String(latest.activeDeliverSch).toLowerCase()!==String(locSch).toLowerCase()){
-  deliverUrl=startUrl;
-  latest.deliveryUrl=startUrl;
-  latest.activeDeliverSch=locSch;
-  ctInvalidateWorkflowCache(ctRouteUrl('/dropdevice'));
-  try{save(latest)}catch(_){}
- }else{
-  deliverUrl=(latest?.deliveryUrl&&ctSchoolKeysMatch(latest.activeDeliverSch,locSch))?latest.deliveryUrl:startUrl;
-  if(latest){
-   latest.activeDeliverSch=locSch;
-   latest.deliveryUrl=deliverUrl;
-   try{save(latest)}catch(_){}
-  }
- }
- // Persist exact sch key back onto asset meta when /drop remapped the display name.
- if(latest){
-  const key=String(a||'').toLowerCase();
-  if(!latest.assetMeta)latest.assetMeta={};
-  latest.assetMeta[key]={...(latest.assetMeta[key]||{}),sch:locSch,locationName:locLabel,deliveryUrl:deliverUrl};
-  try{save(latest)}catch(_){}
- }
- let r=await rgSubmitWorkflowPage(deliverUrl,a,/dropmeschoolsdev|dropmeschools|dropdevice/i);
- if((!r.ok&&/Could not find the RepairGenie Asset ID/i.test(r.msg||''))||(!r.ok&&!r.html)){
-  // Retry after fresh resolve, then direct POST fallback.
-  try{resolvedPage=await ctResolveDeliverPageForSchool(locSch)}catch(_){}
-  if(resolvedPage?.url&&resolvedPage.url!==deliverUrl){
-   deliverUrl=resolvedPage.url;locSch=resolvedPage.sch||locSch;
-   r=await rgSubmitWorkflowPage(deliverUrl,a,/dropmeschoolsdev|dropmeschools|dropdevice/i);
-  }
- }
- if(!r.ok&&/Could not find the RepairGenie Asset ID/i.test(r.msg||'')){
-  r=await ctSubmitDeliverDirect(a,locSch);
- }
+ const meta=ctAssetDeliverMeta(b?.id?load(b.id):b,a);
+ const locSch=meta.sch||'';
+ const locLabel=meta.locationName||locSch;
+ if(!locSch)return{ok:true,result:'SKIPPED',msg:'Not listed on any /drop school page. Deliver skipped.',skipped:true};
+ const r=await ctPostClearer('/dropdevice',{assetid:String(a),loc:String(locSch)});
  const parsed=(r.html?parseDeliver(a,r.html,locLabel):{ok:false,result:'FAILED',msg:r.msg||('HTTP '+r.status)});
- const lockTarget=b?.id?load(b.id):latest||b;
- if(parsed.ok||/\/dropdevice/i.test(r.url||'')){
-  if(lockTarget){lockTarget.activeDeliverSch=locSch;try{save(lockTarget)}catch(_){}}
-  ctLockDeliverContinueUrl(lockTarget||b,r.url,r.html,r.status);
- }
- if(parsed.alreadyReceived)return{...parsed,ok:true,result:'ALREADY DELIVERED',status:'Received',alreadyReceived:true};
+ if(parsed.skipped||parsed.alreadyReceived)return{...parsed,ok:true,result:'SKIPPED',skipped:true,alreadyReceived:!!parsed.alreadyReceived};
  if(parsed.ok&&!pf.verify)return parsed;
  const verified=await rgWaitForStatus(b,a,['Delivered','Received']);
  if(verified.ok){
-  const again=b?.id?load(b.id):lockTarget||b;
-  if(again){again.activeDeliverSch=locSch;try{save(again)}catch(_){}}
-  ctLockDeliverContinueUrl(again||b,r.url,r.html,r.status);
-  if(rgIsReceivedStatus(verified.status))return{ok:true,result:'ALREADY DELIVERED',msg:(parsed.msg?parsed.msg+' ':'')+'RepairGenie already shows Received (past Delivered).',status:'Received',alreadyReceived:true};
-  return {ok:true,result:parsed.ok&&parsed.result==='ALREADY DELIVERED'?'ALREADY DELIVERED':'DELIVERED',msg:(parsed.msg?parsed.msg+' ':'')+'Submitted through '+deliverUrl+' and verified Delivered by RepairGenie API.',status:'Delivered'};
+  if(rgIsReceivedStatus(verified.status))return{ok:true,result:'SKIPPED',msg:(parsed.msg?parsed.msg+' ':'')+'RepairGenie already shows Received.',status:'Received',skipped:true,alreadyReceived:true};
+  return {ok:true,result:'DELIVERED',msg:(parsed.msg?parsed.msg+' ':'')+'Posted /dropdevice and verified Delivered.',status:'Delivered'};
  }
  if(parsed.ok)return parsed;
  return{ok:false,result:'FAILED',msg:(parsed.msg||r.msg||'Deliver failed.')+(verified.available?(' Current status: '+(verified.status||'none')+'.'):''),status:verified.status||null};
+}
+async function ctPostClearer(path,fields){
+ // Inbound Clearer body: assetid + loc + CSRF. One POST, no form hunt.
+ let tok=token();
+ if(!tok){
+  try{const warm=await rgFetchPage(ctRouteUrl('/drop'));if(warm.ok)tok=ctExtractToken(doc(warm.html))||''}catch(_){}
+ }
+ if(!tok)return{ok:false,status:0,html:'',url:'',msg:'No CSRF token for '+path+'.'};
+ const send=async()=>{
+  const body=new URLSearchParams({...fields,_token:tok});
+  const url=ctRouteUrl(path);
+  const r=await fetch(url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'text/html,application/xhtml+xml'},body:body.toString(),cache:'no-store',redirect:'follow'});
+  return{ok:r.ok,status:r.status,url:r.url||url,html:await r.text()};
+ };
+ let out=await send();
+ if(out.status===419){
+  try{const warm=await rgFetchPage(ctRouteUrl('/drop'));if(warm.ok)tok=ctExtractToken(doc(warm.html))||tok}catch(_){}
+  out=await send();
+ }
+ return out;
 }
 function parseReceive(asset,h){
  const d=doc(h),low=String(asset||'').toLowerCase();
@@ -728,24 +530,58 @@ async function ctLoadReceiveSchools(force=false){
  if(!items.length)console.warn('[Cell Tech Power Processor] No receive schools parsed from /receivedevs');
  return items;
 }
-function ctAssetsListedOnReceivePage(html){
+function ctIndexReceivePageAssets(school,html){
+ const ids=ctFirstCellAssets(html);
+ for(const id of ids){
+  const key=String(id||'').trim().toLowerCase();
+  if(key)ctReceiveAssetIndex[key]={sch:school.sch,name:school.name||school.sch,url:school.url,asset:String(id).trim()};
+ }
+ return ids;
+}
+function ctFirstCellAssets(html){
  const d=doc(html),out=[];
  for(const tr of d.querySelectorAll('table tbody tr')){
-  const cells=[...tr.querySelectorAll('td')].map(c=>txt(c)).filter(Boolean);
-  if(!cells.length)continue;
-  // Python inbound clearer uses the first cell as asset/serial.
-  out.push(cells[0]);
-  if(cells[1]&&cells[1]!==cells[0])out.push(cells[1]);
+  const t=txt(tr.querySelector('td'));
+  if(!t||isHeader(t)||/^(device|status|action|school|location)$/i.test(t))continue;
+  out.push(t);
  }
  return out;
 }
-function ctIndexReceivePageAssets(school,html){
- const ids=ctAssetsListedOnReceivePage(html);
- for(const id of ids){
-  const key=String(id||'').trim().toLowerCase();
-  if(key)ctReceiveAssetIndex[key]={sch:school.sch,name:school.name||school.sch,url:school.url};
+async function ctBuildDropAssetIndex(){
+ const index=Object.create(null);
+ const page=await ctGetWorkflowPage(ctRouteUrl('/drop'),true);
+ if(!page.ok)return index;
+ const items=ctExtractDeliverLocationsFromDrop(doc(page.html),page.url||ctRouteUrl('/drop'),page.html);
+ for(const school of items){
+  if(!school?.url)continue;
+  try{
+   const p=await ctGetWorkflowPage(school.url,false);
+   if(!p.ok)continue;
+   for(const id of ctFirstCellAssets(p.html)){
+    const key=id.trim().toLowerCase();
+    if(key&&!index[key])index[key]={sch:school.sch,name:school.name||school.sch,url:school.url,asset:id.trim()};
+   }
+  }catch(_){}
  }
- return ids;
+ return index;
+}
+async function ctListClearAllReceive(){
+ const schools=await ctLoadReceiveSchools(true);
+ const assets=[],seen=new Set();
+ for(const school of schools){
+  if(!school?.url)continue;
+  try{
+   const page=await ctGetWorkflowPage(school.url,false);
+   if(!page.ok)continue;
+   for(const id of ctFirstCellAssets(page.html)){
+    const key=id.trim().toLowerCase();
+    if(!key||seen.has(key))continue;
+    seen.add(key);
+    assets.push({asset:id.trim(),sch:school.sch,name:school.name||school.sch,url:school.url});
+   }
+  }catch(_){}
+ }
+ return {schools,assets};
 }
 function ctMatchReceiveSchool(meta,items){
  const list=items||Object.values(ctReceiveLocationMap);
@@ -797,27 +633,17 @@ async function ctFindReceiveSchoolForAsset(asset,schools){
  return ctReceiveAssetIndex[needle]||null;
 }
 async function ctResolveReceiveSchool(b,asset,schools){
- // A+C: prefer the school just used for Deliver; otherwise hub /receivedevs index.
+ // Prefer the /receivedevs page that lists the asset. Exact school match only when the index missed it.
+ const needle=String(asset||'').trim().toLowerCase();
+ if(needle&&ctReceiveAssetIndex[needle])return ctReceiveAssetIndex[needle];
  const meta=ctAssetDeliverMeta(b,asset);
- const locSch=String(meta.sch||b.location||'').trim();
- const locLabel=String(meta.locationName||locSch||b.location||'').trim();
+ const list=schools||Object.values(ctReceiveLocationMap);
+ const locSch=String(meta.sch||'').trim();
  if(locSch){
-  const list=schools||Object.values(ctReceiveLocationMap);
-  const matched=list.length?ctMatchReceiveSchool({sch:locSch,locationName:locLabel},list):null;
+  const matched=ctMatchReceiveSchool({sch:locSch,locationName:meta.locationName||locSch},list);
   if(matched)return matched;
-  return{sch:locSch,name:locLabel||locSch,url:ctRouteUrl('/recvschoolsdev?sch='+encodeURIComponent(locSch))};
  }
- let list=schools;
- if(!list||!list.length){
-  try{list=await ctLoadReceiveSchools(false)}catch(_){list=[]}
-  if(!list.length)try{list=await ctLoadReceiveSchools(true)}catch(_){list=[]}
- }
- let hit=await ctFindReceiveSchoolForAsset(asset,list);
- if(hit)return hit;
- hit=ctMatchReceiveSchool({sch:locSch,locationName:locLabel},list);
- if(hit)return hit;
- if(list.length===1)return list[0];
- return null;
+ return ctFindReceiveSchoolForAsset(asset,list);
 }
 function ctLockReceiveContinueUrl(b,responseUrl,responseHtml,status,sch){
  if(!b||!responseUrl)return;
@@ -834,60 +660,19 @@ function ctLockReceiveContinueUrl(b,responseUrl,responseHtml,status,sch){
  }catch(_){}
 }
 async function rgSubmitReceivePage(pageUrl,asset,locSch){
- const submitOnce=async(force=false)=>{
-  const page=await ctGetWorkflowPage(pageUrl,force);
-  if(!page.ok)return{ok:false,status:page.status,html:page.html||'',url:page.url||pageUrl,msg:'Could not open receive page. HTTP '+page.status};
-  const d=doc(page.html),forms=[...d.querySelectorAll('form')];
-  let form=forms.find(f=>f.querySelector('input[name="assetid"],input[name="asset_id"],input[name="asset"],input[name="serial"],input[name="serialnumber"],input[name="serial_number"]'));
-  if(!form)form=forms.find(f=>/schooltechrecv|recvschoolsdev|schoolrecv|receiv/i.test(f.getAttribute('action')||''));
-  if(!form)form=forms.find(f=>f.querySelector('input[type="text"],input[type="search"]'));
-  let action='',body;
-  if(form){
-   ({body}=rgBuildFormPayload(form,asset));
-   const pageToken=ctExtractToken(d)||'';
-   if(pageToken&&!body.get('_token'))body.set('_token',pageToken);
-   if(locSch&&!body.get('loc'))body.set('loc',locSch);
-   if(!body.get('bulkval'))body.set('bulkval','0/');
-   action=new URL(form.getAttribute('action')||page.url,page.url).href;
-   const method=(form.getAttribute('method')||'POST').toUpperCase();
-   let r;
-   if(method==='GET'){
-    const u=new URL(action);for(const [k,v] of body.entries())u.searchParams.append(k,v);
-    r=await fetch(u.href,{method:'GET',credentials:'include',cache:'no-store',redirect:'follow'});
-   }else{
-    r=await fetch(action,{method,credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8'},body:body.toString(),cache:'no-store',redirect:'follow'});
-   }
-   return{ok:r.ok,status:r.status,url:r.url||action,html:await r.text(),action};
-  }
-  // Fallback matching Inbound Clearer: POST /schooltechrecv directly.
-  const tok=ctExtractToken(d)||token();
-  body=new URLSearchParams({assetid:String(asset),_token:tok,loc:String(locSch||''),bulkval:'0/'});
-  action=ctRouteUrl('/schooltechrecv');
-  const r=await fetch(action,{method:'POST',credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'text/html,application/xhtml+xml'},body:body.toString(),cache:'no-store',redirect:'follow'});
-  return{ok:r.ok,status:r.status,url:r.url||action,html:await r.text(),action};
- };
- let out=await submitOnce(false);
- if(out.status===419){ctInvalidateWorkflowCache(pageUrl);out=await submitOnce(true)}
- if(out.ok&&out.html&&ctPageHasAssetForm(out.html)){
-  ctCacheWorkflowHtml(pageUrl,{ok:true,status:out.status,url:out.url||pageUrl,html:out.html});
-  if(out.url&&String(out.url)!==String(pageUrl))ctCacheWorkflowHtml(out.url,{ok:true,status:out.status,url:out.url,html:out.html});
- }else{
-  ctInvalidateWorkflowCache(pageUrl);
-  if(out.url)ctInvalidateWorkflowCache(out.url);
- }
- return out;
+ return ctPostClearer('/schooltechrecv',{assetid:String(asset),loc:String(locSch||''),bulkval:'0/'});
 }
 async function receiveStage(b,a,knownDelivered=false){
  const pf=ctSpeedProfile();
- // Always peek status for skip/terminal states (even Fast) so already-Delivered/Received don't count as FAILED.
- {
+ // Clear All is already the /receivedevs list — post without a per-device status check.
+ // Spreadsheet receive still peeks so already-done rows are SKIPPED.
+ if(!b?.clearAll){
   const before=await rgCurrentStatus(b,a);
   if(before.available&&before.status){
    if(rgIsReceivedStatus(before.status)||/receiv/i.test(String(before.status))){
     return{ok:true,result:'SKIPPED',msg:`Already ${before.status} — receive skipped.`,status:before.status,skipped:true,alreadyReceived:true};
    }
    if(!rgIsDeliveredStatus(before.status)){
-    // Wrong status for receive (still DropMe/Fixed/etc.) — skip rather than fail the batch.
     if(!knownDelivered||pf.mode==='safe'){
      return{ok:true,result:'SKIPPED',msg:`Current status is ${before.status}; expected Delivered. Receive skipped.`,status:before.status,skipped:true};
     }
@@ -903,8 +688,8 @@ async function receiveStage(b,a,knownDelivered=false){
  }
  // A+C: deliver-sch first, then /receivedevs hub — no manual location pick for Receive.
  const hit=await ctResolveReceiveSchool(b,a,schools);
- if(!hit)return{ok:false,result:'FAILED',msg:`Device ${a} was not found on any /receivedevs school page, and no deliver location was available to fall back on.`};
- const startUrl=hit.url||ctRouteUrl('/recvschoolsdev?sch='+encodeURIComponent(hit.sch));
+ if(!hit?.url)return{ok:true,result:'SKIPPED',msg:`Device ${a} is not listed on any /receivedevs school page. Receive skipped.`,skipped:true};
+ const startUrl=hit.url;
  const latest=b?.id?load(b.id):b;
  let receiveUrl;
  if(latest?.activeReceiveSch&&String(latest.activeReceiveSch).toLowerCase()!==String(hit.sch).toLowerCase()){
@@ -1062,7 +847,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.39'}catch(_){return'2.31.39'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.42'}catch(_){return'2.31.42'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1288,7 +1073,7 @@ function ctResumePartsDirect(){
 function ctDownloadPartsResults(){const r=ctResults();if(!r.length)return alert('There are no Parts results yet.');const ws=XLSX.utils.json_to_sheet(r),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Bulk Parts Results');XLSX.writeFile(wb,`RepairGenie_Parts_Results_${location.hostname.split('.')[0]}_${new Date().toISOString().slice(0,10)}.xlsx`)}
 async function ctLiveDropdowns(){let dev=ctFindField('Device Code'),per=ctFindField('Peripheral');if(dev)return{devices:ctOptions(dev),peripherals:ctOptions(per)};const r=await fetch(ctRouteUrl('/addpart'),{credentials:'include',cache:'no-store'});if(!r.ok)throw Error('RepairGenie returned HTTP '+r.status);const d=new DOMParser().parseFromString(await r.text(),'text/html');return{devices:ctOptions(ctFindField('Device Code',d)),peripherals:ctOptions(ctFindField('Peripheral',d))}}
 function ctOptions(s){return s?.options?[...new Set([...s.options].map(o=>(o.textContent||'').trim()).filter(t=>t&&!/^--.*select/i.test(t)))]:[]}
-async function ctDownloadTemplate(){try{const {devices,peripherals}=await ctLiveDropdowns(),descriptions=['Top Cover','Hinges','IO Board','Base Cover','Palmrest','Keyboard','Bezel','LCD','LCD Cable','Camera','Systemboard','Battery','Wifi Card','Wifi Antenna'],wb=new ExcelJS.Workbook(),up=wb.addWorksheet('Bulk Parts Upload',{views:[{state:'frozen',ySplit:1}]});up.columns=[['Device Code',26],['Peripheral',24],['Part #',22],['Description',35],['Price',14],['ADW Detail',38],['CLW Detail',38]].map(([header,width])=>({header,width}));up.getRow(1).font={bold:true};const li=wb.addWorksheet('Lists');li.getCell('A1').value='Device Codes';li.getCell('B1').value='Peripherals';li.getCell('C1').value='Descriptions';devices.forEach((v,i)=>li.getCell('A'+(i+2)).value=v);peripherals.forEach((v,i)=>li.getCell('B'+(i+2)).value=v);descriptions.forEach((v,i)=>li.getCell('C'+(i+2)).value=v);li.state='veryHidden';for(let r=2;r<=1000;r++){if(devices.length)up.getCell('A'+r).dataValidation={type:'list',allowBlank:false,formulae:[`'Lists'!$A$2:$A${devices.length+1}`]};if(peripherals.length)up.getCell('B'+r).dataValidation={type:'list',allowBlank:true,formulae:[`'Lists'!$B$2:$B${peripherals.length+1}`]};up.getCell('D'+r).dataValidation={type:'list',allowBlank:false,formulae:[`'Lists'!$C$2:$C${descriptions.length+1}`]};up.getCell('E'+r).numFmt='$0.00'}const ins=wb.addWorksheet('Instructions');ins.columns=[{header:'Field',width:22},{header:'Required?',width:15},{header:'Description',width:70},{header:'Example',width:28}];ins.getRow(1).font={bold:true};[['Device Code','Yes','Select a live RepairGenie Device Code.',devices[0]||''],['Peripheral','No','Select only when required.',peripherals[0]||''],['Part #','Yes','Enter the part number.','01AX768'],['Description','Yes','Enter the part description.','WiFi Card'],['Price','No','Blank values upload as 0.','15'],['ADW Detail','No','Optional.',''],['CLW Detail','No','Optional.','']].forEach(x=>ins.addRow(x));ins.addRow([]);ins.addRow(['IMPORTANT']);ins.getRow(ins.rowCount).font={bold:true};['Do not rename Bulk Parts Upload headers.','Each row is one RepairGenie part.','Peripheral, ADW Detail, and CLW Detail are optional.','Download a fresh template when RepairGenie dropdowns change.'].forEach(x=>ins.addRow([x]));const buf=await wb.xlsx.writeBuffer(),blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});ctSaveBlob(blob,'RepairGenie_Bulk_Parts_Template.xlsx')}catch(e){alert('Could not create template.\n\n'+e.message)}}
+async function ctDownloadTemplate(){try{const {devices,peripherals}=await ctLiveDropdowns(),descriptions=['Top Cover','Hinges','IO Board','Base Cover','Palmrest','Keyboard','Bezel','LCD','LCD Cable','LCD Tape','Camera','Speakers','Systemboard','Battery','Wifi Card','Wifi Antenna'],wb=new ExcelJS.Workbook(),up=wb.addWorksheet('Bulk Parts Upload',{views:[{state:'frozen',ySplit:1}]});up.columns=[['Device Code',26],['Peripheral',24],['Part #',22],['Description',35],['Price',14],['ADW Detail',38],['CLW Detail',38]].map(([header,width])=>({header,width}));up.getRow(1).font={bold:true};const li=wb.addWorksheet('Lists');li.getCell('A1').value='Device Codes';li.getCell('B1').value='Peripherals';li.getCell('C1').value='Descriptions';devices.forEach((v,i)=>li.getCell('A'+(i+2)).value=v);peripherals.forEach((v,i)=>li.getCell('B'+(i+2)).value=v);descriptions.forEach((v,i)=>li.getCell('C'+(i+2)).value=v);li.state='veryHidden';for(let r=2;r<=1000;r++){if(devices.length)up.getCell('A'+r).dataValidation={type:'list',allowBlank:false,formulae:[`'Lists'!$A$2:$A${devices.length+1}`]};if(peripherals.length)up.getCell('B'+r).dataValidation={type:'list',allowBlank:true,formulae:[`'Lists'!$B$2:$B${peripherals.length+1}`]};up.getCell('D'+r).dataValidation={type:'list',allowBlank:false,formulae:[`'Lists'!$C$2:$C${descriptions.length+1}`]};up.getCell('E'+r).numFmt='$0.00'}const ins=wb.addWorksheet('Instructions');ins.columns=[{header:'Field',width:22},{header:'Required?',width:15},{header:'Description',width:70},{header:'Example',width:28}];ins.getRow(1).font={bold:true};[['Device Code','Yes','Select a live RepairGenie Device Code.',devices[0]||''],['Peripheral','No','Select only when required.',peripherals[0]||''],['Part #','Yes','Enter the part number.','01AX768'],['Description','Yes','Enter the part description.','WiFi Card'],['Price','No','Blank values upload as 0.','15'],['ADW Detail','No','Optional.',''],['CLW Detail','No','Optional.','']].forEach(x=>ins.addRow(x));ins.addRow([]);ins.addRow(['IMPORTANT']);ins.getRow(ins.rowCount).font={bold:true};['Do not rename Bulk Parts Upload headers.','Each row is one RepairGenie part.','Peripheral, ADW Detail, and CLW Detail are optional.','Download a fresh template when RepairGenie dropdowns change.'].forEach(x=>ins.addRow([x]));const buf=await wb.xlsx.writeBuffer(),blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});ctSaveBlob(blob,'RepairGenie_Bulk_Parts_Template.xlsx')}catch(e){alert('Could not create template.\n\n'+e.message)}}
 
 
 
@@ -1827,117 +1612,8 @@ function ctDeliverUrlForSch(sch,hintUrl){
  }catch(_){}
  return ctRouteUrl('/dropmeschoolsdev?sch='+encodeURIComponent(sch));
 }
-function ctSchoolKeysMatch(a,b){
- const x=ctNormLocKey(a),y=ctNormLocKey(b);
- if(!x||!y)return false;
- return x===y||x.includes(y)||y.includes(x);
-}
-async function ctProbeDeliverSchoolUrls(sch){
- const out=[],seen=new Set();
- const add=(url,schKey)=>{
-  const u=String(url||'').trim();if(!u||seen.has(u))return;
-  seen.add(u);out.push({url:u,sch:String(schKey||sch)});
- };
- for(const item of ctDeliverLocationItems()){
-  if(ctSchoolKeysMatch(item.sch,sch)||ctSchoolKeysMatch(item.name,sch)){
-   add(item.url||ctDeliverUrlForSch(item.sch,''),item.sch);
-  }
- }
- try{
-  const drop=await rgFetchPage(ctRouteUrl('/drop'));
-  if(drop.ok){
-   const items=ctExtractDeliverLocationsFromDrop(doc(drop.html),drop.url||ctRouteUrl('/drop'),drop.html);
-   for(const item of items){
-    if(!(ctSchoolKeysMatch(item.sch,sch)||ctSchoolKeysMatch(item.name,sch)))continue;
-    add(item.url||ctDeliverUrlForSch(item.sch,''),item.sch);
-    ctDeliverLocationMap[item.sch]=item;
-   }
-   const d=doc(drop.html);
-   for(const sel of d.querySelectorAll('select')){
-    for(const o of sel.options){
-     const label=(o.textContent||'').replace(/\s+/g,' ').trim();
-     const value=ctDecodeSchParam(o.value||'');
-     const schVal=value&&!/^(0|-1)$/.test(value)?value:label;
-     if(!ctLooksLikeSchoolOption(schVal,label))continue;
-     if(!(ctSchoolKeysMatch(label,sch)||ctSchoolKeysMatch(schVal,sch)))continue;
-     add(ctDeliverUrlForSch(schVal,''),schVal);
-     add(ctRouteUrl('/dropmeschools?sch='+encodeURIComponent(schVal)),schVal);
-     add(ctRouteUrl('/dropdevice?sch='+encodeURIComponent(schVal)),schVal);
-    }
-   }
-  }
- }catch(e){console.warn('[Cell Tech Power Processor] /drop probe for deliver school failed:',e?.message||e)}
- for(const path of ['/dropmeschoolsdev','/dropmeschools','/dropdevice']){
-  add(ctRouteUrl(path+'?sch='+encodeURIComponent(sch)),sch);
- }
- return out;
-}
 const CT_DELIVER_PAGE_CACHE=Object.create(null);
 function ctClearDeliverPageCache(){for(const k of Object.keys(CT_DELIVER_PAGE_CACHE))delete CT_DELIVER_PAGE_CACHE[k]}
-async function ctResolveDeliverPageForSchool(sch){
- // Pitt often needs the exact /drop option value; display names alone yield a page with no asset form.
- // Cache per school so Clearer-style school-first batches only probe once.
- const cacheKey=ctNormLocKey(sch);
- if(cacheKey&&CT_DELIVER_PAGE_CACHE[cacheKey])return CT_DELIVER_PAGE_CACHE[cacheKey];
- const probes=await ctProbeDeliverSchoolUrls(sch);
- for(const p of probes){
-  try{
-   const page=await ctGetWorkflowPage(p.url,false);
-   if(!page.ok)continue;
-   if(ctPageHasAssetForm(page.html)){
-    const hit={url:page.url||p.url,sch:p.sch,html:page.html,status:page.status};
-    if(cacheKey)CT_DELIVER_PAGE_CACHE[cacheKey]=hit;
-    return hit;
-   }
-   const d=doc(page.html);
-   for(const a of d.querySelectorAll('a[href*="sch="],a[href*="dropmeschool"],a[href*="dropdevice"]')){
-    const label=(a.textContent||'').replace(/\s+/g,' ').trim();
-    let u;try{u=new URL(a.getAttribute('href')||'',page.url||p.url)}catch(_){continue}
-    const linkSch=ctSchFromSearchParams(u.searchParams)||label;
-    if(!(ctSchoolKeysMatch(label,sch)||ctSchoolKeysMatch(linkSch,sch)))continue;
-    const page2=await ctGetWorkflowPage(u.href,false);
-    if(page2.ok&&ctPageHasAssetForm(page2.html)){
-     const hit={url:page2.url||u.href,sch:linkSch||p.sch,html:page2.html,status:page2.status};
-     if(cacheKey)CT_DELIVER_PAGE_CACHE[cacheKey]=hit;
-     return hit;
-    }
-   }
-  }catch(_){}
- }
- return null;
-}
-async function ctSubmitDeliverDirect(asset,sch){
- // Last resort when the school page HTML has no scan form (JS-only or wrong sch key).
- // Only treat as ok when the response actually looks like a deliver success — bare HTTP 200 is not enough.
- let tok=token(),referer=ctRouteUrl('/drop');
- try{
-  const warm=await rgFetchPage(ctRouteUrl('/drop'));
-  if(warm.ok){tok=ctExtractToken(doc(warm.html))||tok;referer=warm.url||referer}
- }catch(_){}
- if(!tok){
-  try{const w=await rgFetchPage(ctRouteUrl('/createdrop'));if(w.ok)tok=ctExtractToken(doc(w.html))||tok}catch(_){}
- }
- if(!tok)return{ok:false,status:0,html:'',url:'',msg:'No CSRF token for direct deliver POST.'};
- const attempts=[
-  {url:ctRouteUrl('/dropdevice'),fields:{assetid:String(asset),_token:tok,sch:String(sch)}},
-  {url:ctRouteUrl('/dropmeschoolsdev'),fields:{assetid:String(asset),_token:tok,sch:String(sch)}},
-  {url:ctRouteUrl('/dropmeschools'),fields:{assetid:String(asset),_token:tok,sch:String(sch)}},
-  {url:ctRouteUrl('/dropmeschoolsdev')+'?sch='+encodeURIComponent(sch),fields:{assetid:String(asset),_token:tok}},
-  {url:ctRouteUrl('/dropdevice')+'?sch='+encodeURIComponent(sch),fields:{assetid:String(asset),_token:tok}}
- ];
- let last={ok:false,status:0,html:'',url:'',msg:'Direct deliver POST failed for school '+sch};
- for(const att of attempts){
-  const body=new URLSearchParams(att.fields);
-  try{
-   const r=await fetch(att.url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'text/html,application/xhtml+xml','Referer':referer},body:body.toString(),cache:'no-store',redirect:'follow'});
-   const html=await r.text();
-   const parsed=parseDeliver(asset,html,sch);
-   last={ok:parsed.ok,status:r.status,url:r.url||att.url,html,action:att.url,direct:true,msg:parsed.msg};
-   if(parsed.ok)return last;
-  }catch(e){last={ok:false,status:0,html:'',url:att.url,msg:e?.message||String(e)}}
- }
- return last;
-}
 function ctLooksLikeSchoolOption(value,label){
  const v=String(value||'').trim(),l=String(label||'').trim();
  if(!v&&!l)return false;
@@ -2344,76 +2020,16 @@ async function ctRunDropBatchInline(i){
  b.running=true;b.startedAt=b.startedAt||new Date().toISOString();b.phase=b.phase||(ctModeStartsWithDrop(b.mode)?'drop':b.mode);b.speed=pf.mode;save(b);ctUpdateDropStats(b);
  const persistResult=(asset,mutate)=>{const latestBatch=load(i);if(!latestBatch)return null;const rr=ensureResult(latestBatch,asset);mutate(rr,latestBatch);rr.time=new Date().toLocaleString();save(latestBatch);ctUpdateDropStats(latestBatch);return latestBatch};
  const processOne=async(a,phase)=>{
+   if(phase!=='drop')return;
    let snap=load(i);if(!snap)return;
-   if(phase==='drop'){
-     let dr;try{dr=await dropStage(snap,a)}catch(e){dr={ok:false,result:'FAILED',msg:e?.message||String(e)}}
-     persistResult(a,r=>{
-       if(dr?.result==='ALREADY DELIVERED'){
-         r.drop='ALREADY DELIVERED';r.dropMsg=dr.msg||'';r.deliver='ALREADY DELIVERED';r.deliverMsg='Delivery skipped because RepairGenie already reports Delivered.';
-         if(ctModeNeedsReceive(snap.mode)){r.receive='NOT ATTEMPTED';r.receiveMsg='';r.final='PENDING RECEIVE'}
-         else r.final='COMPLETE';
-       }else{r.drop=dr?.result||'FAILED';r.dropMsg=dr?.msg||'';r.final=dr?.ok?'PENDING DELIVERY':'FAILED'}
-     });
-   }else if(phase==='receive'){
-     snap=load(i);if(!snap)return;const prior=ensureResult(snap,a);
-     if(/^(SKIPPED|RECEIVED|ALREADY RECEIVED)$/i.test(prior.receive||'')){persistResult(a,r=>{finalizeResult(r,snap.mode)});return}
-     const deliverOK=ctModeReceiveOnly(snap.mode)||/^(DELIVERED|ALREADY DELIVERED)$/i.test(prior.deliver||'')||/^ALREADY DELIVERED$/i.test(prior.drop||'');
-     if(!deliverOK){
-      persistResult(a,r=>{if(r.final!=='COMPLETE'){r.receive='SKIPPED';r.receiveMsg='Delivered stage did not complete successfully.'}finalizeResult(r,snap.mode)});
-      return
-     }
-     const meta=ctAssetDeliverMeta(snap,a);
-     // Receive can resolve school from deliver sch or /receivedevs hub — only skip explicit review skips.
-     if(meta.skipped){
-      persistResult(a,r=>{r.receive='SKIPPED';r.receiveMsg='Skipped in deliver location review.';finalizeResult(r,snap.mode)});
-      return
-     }
-     const knownDelivered=!ctModeReceiveOnly(snap.mode)&&(/^(DELIVERED|ALREADY DELIVERED)$/i.test(prior.deliver||'')||/^ALREADY DELIVERED$/i.test(prior.drop||''));
-     let re;try{re=await receiveStage(snap,a,knownDelivered)}catch(e){re={ok:false,result:'FAILED',msg:e?.message||String(e)}}
-     persistResult(a,r=>{r.receive=re?.result||'FAILED';r.receiveMsg=re?.msg||'';finalizeResult(r,snap.mode)});
-   }else{
-     snap=load(i);if(!snap)return;const prior=ensureResult(snap,a);
-     if(/^ALREADY DELIVERED$/i.test(prior.deliver||'')){
-      if(ctModeNeedsReceive(snap.mode)){persistResult(a,r=>{r.final='PENDING RECEIVE'});return}
-      persistResult(a,r=>{r.final='COMPLETE'});return
-     }
-     if(/^SKIPPED$/i.test(prior.deliver||'')){persistResult(a,r=>{finalizeResult(r,snap.mode)});return}
-     let meta=ctAssetDeliverMeta(snap,a);
-     if(meta.skipped){
-      persistResult(a,r=>{if(r.final!=='COMPLETE'){r.deliver='SKIPPED';r.deliverMsg='Skipped in deliver location review.'}finalizeResult(r,snap.mode)});
-      return
-     }
-     if(!meta.sch){
-      try{await ctEnsureAssetDeliverMeta(snap,a)}catch(_){}
-      snap=load(i)||snap;
-      meta=ctAssetDeliverMeta(snap,a);
-     }
-     if(!meta.sch){
-      persistResult(a,r=>{r.deliver='FAILED';r.deliverMsg='Could not auto-resolve deliver school (status API + live ticket lookup). Use Col B or type a school override.';finalizeResult(r,snap.mode)});
-      return
-     }
-     const dropOK=ctModeNeedsDeliver(snap.mode)&&!ctModeNeedsDrop(snap.mode)||/^(DROPPED|ALREADY DROPPED|ALREADY INBOUND|ALREADY DELIVERED)$/i.test(prior.drop||'');
-     if(dropOK){
-       const knownInbound=ctModeStartsWithDrop(snap.mode)&&/^(DROPPED|ALREADY DROPPED|ALREADY INBOUND)$/i.test(prior.drop||'');
-       let de;try{de=await deliverStage(snap,a,knownInbound)}catch(e){de={ok:false,result:'FAILED',msg:e?.message||String(e)}}
-       persistResult(a,r=>{
-         r.deliver=de?.result||'FAILED';r.deliverMsg=de?.msg||'';
-         if(de?.ok||/DELIVERED/i.test(de?.result||'')){const m=ctAssetDeliverMeta(load(i)||snap,a);if(m.locationName||m.sch)r.location=m.locationName||m.sch}
-         if(de?.alreadyReceived||rgIsReceivedStatus(de?.status)||/status\s+is\s+received\b/i.test(de?.msg||'')){
-          r.receive='ALREADY RECEIVED';r.receiveMsg=de?.msg||'Device already Received — deliver and receive skipped.';
-          finalizeResult(r,snap.mode);
-          return
-         }
-         if(ctModeNeedsReceive(snap.mode)){
-           r.final=/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver)?'PENDING RECEIVE':'PARTIAL';
-           if(!/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver))finalizeResult(r,snap.mode);
-         }else{
-           finalizeResult(r,snap.mode);
-           if((snap.mode==='deliver')&&r.drop==='NOT ATTEMPTED')r.final=/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver)?'COMPLETE':'FAILED';
-         }
-       });
-     }else persistResult(a,r=>{if(r.final!=='COMPLETE'){r.deliver='SKIPPED';r.deliverMsg='DropMe stage did not complete successfully.'}finalizeResult(r,snap.mode)});
-   }
+   let dr;try{dr=await dropStage(snap,a)}catch(e){dr={ok:false,result:'FAILED',msg:e?.message||String(e)}}
+   persistResult(a,r=>{
+     if(dr?.result==='ALREADY DELIVERED'){
+       r.drop='ALREADY DELIVERED';r.dropMsg=dr.msg||'';r.deliver='ALREADY DELIVERED';r.deliverMsg='Delivery skipped because RepairGenie already reports Delivered.';
+       if(ctModeNeedsReceive(snap.mode)){r.receive='NOT ATTEMPTED';r.receiveMsg='';r.final='PENDING RECEIVE'}
+       else r.final='COMPLETE';
+     }else{r.drop=dr?.result||'FAILED';r.dropMsg=dr?.msg||'';r.final=dr?.ok?'PENDING DELIVERY':'FAILED'}
+   });
  };
  const waitIfPaused=async()=>{while(true){const x=load(i);if(!x)return false;if(x.stop){x.running=false;save(x);ctSetDropLiveStatus('Batch stopped. Completed results were kept.');return false}if(!x.paused)return true;ctSetDropLiveStatus('Batch paused.');await sleep(250)}};
  const phaseLabel=phase=>phase==='drop'?'QC/Fixed → DropMe':phase==='receive'?'Delivered → Receive':'DropMe → Delivered';
@@ -2455,8 +2071,8 @@ async function ctRunDropBatchInline(i){
    if(!await waitIfPaused())return false;
    const snap=load(i)||b;
    const hit=await ctResolveReceiveSchool(snap,a,schools);
-   if(!hit){
-    persistResult(a,r=>{r.receive='FAILED';r.receiveMsg=`Device ${a} was not found on any /receivedevs school page, and no deliver location was available to fall back on.`;finalizeResult(r,snap.mode)});
+   if(!hit?.url){
+    persistResult(a,r=>{r.receive='SKIPPED';r.receiveMsg=`Device ${a} is not listed on any /receivedevs school page. Receive skipped.`;finalizeResult(r,snap.mode)});
     continue
    }
    const key=String(hit.sch||'').toLowerCase();
@@ -2466,7 +2082,7 @@ async function ctRunDropBatchInline(i){
   let done=0;const total=[...groups.values()].reduce((n,g)=>n+g.assets.length,0);
   for(const{hit,assets}of groups.values()){
    let latest=load(i);if(!latest)return false;
-   const startUrl=hit.url||ctRouteUrl('/recvschoolsdev?sch='+encodeURIComponent(hit.sch));
+   const startUrl=hit.url;
    latest.activeReceiveSch=hit.sch;
    latest.receiveUrl=startUrl;
    save(latest);
@@ -2493,71 +2109,53 @@ async function ctRunDropBatchInline(i){
   return true;
  };
  const runDeliverPhaseSchoolFirst=async()=>{
-  // Inbound Clearer shape: resolve schools once, open each school page once, deliver all assets there.
+  // Index /drop school pages once, then POST /dropdevice for spreadsheet rows that appear there.
   b=load(i);if(!b)return false;
   b.phase='deliver';b.running=true;b.index=0;save(b);
-  ctClearDeliverPageCache();
-  ctSetDropLiveStatus('Resolving deliver schools (ticket / Col B)…');
-  await ctAutoResolveBatchDeliverSchools(i);
+  ctSetDropLiveStatus('Indexing /drop schools…');
+  const dropIndex=await ctBuildDropAssetIndex();
   b=load(i)||b;
   const groups=new Map();
   for(const a of b.assets||[]){
    const prior=ensureResult(b,a);
-   // SKIPPED (already Delivered) is not re-delivered; Receive phase still picks those up when needed.
    if(/^ALREADY DELIVERED$/i.test(prior.deliver||'')||/^SKIPPED$/i.test(prior.deliver||''))continue;
    const dropOK=ctModeNeedsDeliver(b.mode)&&!ctModeNeedsDrop(b.mode)||/^(DROPPED|ALREADY DROPPED|ALREADY INBOUND|ALREADY DELIVERED|NOT ATTEMPTED)$/i.test(prior.drop||'');
    if(!dropOK&&ctModeNeedsDrop(b.mode)){
     persistResult(a,r=>{if(r.final!=='COMPLETE'){r.deliver='SKIPPED';r.deliverMsg='DropMe stage did not complete successfully.'}finalizeResult(r,b.mode)});
     continue
    }
-   let meta=ctAssetDeliverMeta(b,a);
-   if(meta.skipped){
-    persistResult(a,r=>{r.deliver='SKIPPED';r.deliverMsg='Skipped in deliver location review.';finalizeResult(r,b.mode)});
+   const hit=dropIndex[String(a).trim().toLowerCase()];
+   if(!hit){
+    persistResult(a,r=>{r.deliver='SKIPPED';r.deliverMsg='Not listed on any /drop school page. Deliver skipped.';finalizeResult(r,b.mode)});
     continue
    }
-   if(!meta.sch){
-    try{await ctEnsureAssetDeliverMeta(b,a)}catch(_){}
-    b=load(i)||b;meta=ctAssetDeliverMeta(b,a);
-   }
-   if(!meta.sch){
-    persistResult(a,r=>{r.deliver='FAILED';r.deliverMsg='Could not auto-resolve deliver school.';finalizeResult(r,b.mode)});
-    continue
-   }
-   const key=String(meta.sch).toLowerCase();
-   if(!groups.has(key))groups.set(key,{sch:meta.sch,name:meta.locationName||meta.sch,assets:[]});
+   const key=String(hit.sch).toLowerCase();
+   if(!groups.has(key))groups.set(key,{sch:hit.sch,name:hit.name||hit.sch,url:hit.url,assets:[]});
    groups.get(key).assets.push(a);
   }
   let done=0;const total=[...groups.values()].reduce((n,g)=>n+g.assets.length,0);
   for(const group of groups.values()){
    if(!await waitIfPaused())return false;
-   ctSetDropLiveStatus(`Opening deliver school ${group.name}…`);
-   let page=null;try{page=await ctResolveDeliverPageForSchool(group.sch)}catch(_){}
-   let latest=load(i);if(!latest)return false;
-   const startUrl=page?.url||ctDeliverUrlForSch(page?.sch||group.sch,'');
-   const schKey=page?.sch||group.sch;
-   latest.activeDeliverSch=schKey;
-   latest.deliveryUrl=startUrl;
-   save(latest);
+   ctSetDropLiveStatus(`Deliver @ ${group.name}…`);
    for(const a of group.assets){
     if(!await waitIfPaused())return false;
     done++;
     ctSetDropLiveStatus(`Deliver @ ${group.name}: ${done}/${total} — ${a} — ${pf.mode.toUpperCase()}`);
     const snap=load(i);if(!snap)return false;
     if(!snap.assetMeta)snap.assetMeta={};
-    snap.assetMeta[String(a).toLowerCase()]={...(snap.assetMeta[String(a).toLowerCase()]||{}),sch:schKey,locationName:group.name,deliveryUrl:startUrl};
-    snap.activeDeliverSch=schKey;snap.deliveryUrl=startUrl;save(snap);
+    snap.assetMeta[String(a).toLowerCase()]={sch:group.sch,locationName:group.name,deliveryUrl:group.url||''};
+    snap.activeDeliverSch=group.sch;save(snap);
     const knownInbound=ctModeStartsWithDrop(snap.mode)||snap.mode==='deliver'||snap.mode==='deliver_recv';
     let de;try{de=await deliverStage(snap,a,knownInbound)}catch(e){de={ok:false,result:'FAILED',msg:e?.message||String(e)}}
     persistResult(a,r=>{
      r.deliver=de?.result||'FAILED';r.deliverMsg=de?.msg||'';
-     if(de?.ok||/DELIVERED|SKIPPED/i.test(de?.result||''))r.location=group.name||schKey;
+     if(de?.ok||/DELIVERED|SKIPPED/i.test(de?.result||''))r.location=group.name||group.sch;
      if(de?.alreadyReceived||rgIsReceivedStatus(de?.status)||/status\s+is\s+received\b/i.test(de?.msg||'')){
       r.receive='SKIPPED';r.receiveMsg=de?.msg||'Already Received — deliver and receive skipped.';
       finalizeResult(r,snap.mode);
       return
      }
      if(ctModeNeedsReceive(snap.mode)){
-      // Already-Delivered skip still needs the Receive pass.
       r.final=/^(DELIVERED|ALREADY DELIVERED|SKIPPED)$/i.test(r.deliver)?'PENDING RECEIVE':'PARTIAL';
       if(!/^(DELIVERED|ALREADY DELIVERED|SKIPPED)$/i.test(r.deliver))finalizeResult(r,snap.mode);
      }else{
@@ -2609,8 +2207,6 @@ async function ctRunDropBatchInline(i){
    ctSetDropLiveStatus(`Indexing Receive schools (${schools.length}) from /receivedevs…`);
    await ctBuildReceiveAssetIndex(schools,false);
   }catch(_){}
-  // Soft ticket school hints help Receive resolve faster when /receivedevs index is sparse.
-  try{await ctAutoResolveBatchDeliverSchools(i)}catch(_){}
   ctSetDropLiveStatus('Starting Receive pass (Delivered → Receive)…');
   if(!await runReceivePhaseSchoolFirst())return
  }else if(!await runPhase(b.mode))return;
@@ -2651,42 +2247,6 @@ function ctDropMatchSummary(rows){
   review:active.filter(r=>['blank','none','multi','pending'].includes(r.matchStatus)).length,
   skipped:(rows||[]).filter(r=>r.skipped).length
  }
-}
-function ctShowDeliverLocationReview(rows,items){
- return new Promise(resolve=>{
-  styles();
-  document.getElementById(P+'loc_review')?.remove();
-  const list=items||ctDeliverLocationItems();
-  const need=rows.map((r,i)=>({r,i})).filter(x=>!x.r.skipped&&['blank','none','multi','pending'].includes(x.r.matchStatus));
-  const bg=document.createElement('div');bg.id=P+'loc_review';bg.className='rgbp-modal-bg';
-  const m=document.createElement('div');m.className='rgbp-modal';bg.appendChild(m);
-  const optHtml='<option value="">-- Select Deliver Location --</option>'+list.map(v=>`<option value="${esc(v.sch)}">${esc(v.name||v.sch)}</option>`).join('');
-  m.innerHTML=`<h2>Deliver Location Review</h2><div style="margin-bottom:10px">These rows need a location before Delivered can run. Pick from the RG /drop list, or skip the row.</div><div style="max-height:58vh;overflow:auto"><table><thead><tr><th>Asset/Serial</th><th>Spreadsheet</th><th>Issue</th><th>Deliver Location</th><th></th></tr></thead><tbody id="${P}loc_tbody"></tbody></table></div><div class="controls" style="margin-top:12px"><button id="${P}loc_confirm" class="go">Confirm &amp; Continue</button><button id="${P}loc_cancel">Cancel</button></div>`;
-  document.body.appendChild(bg);
-  const tbody=m.querySelector('#'+P+'loc_tbody');
-  const issue=s=>s==='blank'?'No location in Col B':s==='multi'?'Multiple matches':s==='none'?'No match':'Needs review';
-  tbody.innerHTML=need.map(({r,i})=>`<tr data-i="${i}"><td>${esc(r.asset)}</td><td>${esc(r.requested||'')}</td><td>${esc(issue(r.matchStatus))}</td><td><select class="ct-loc-pick" style="min-width:220px">${optHtml}</select></td><td><button type="button" class="ct-loc-skip">Skip</button></td></tr>`).join('');
-  tbody.querySelectorAll('tr').forEach(tr=>{
-   const i=Number(tr.dataset.i);const r=rows[i];
-   const sel=tr.querySelector('.ct-loc-pick');
-   if(r.candidates?.length===1)sel.value=r.candidates[0].sch;
-   else if(r.sch)sel.value=r.sch;
-   tr.querySelector('.ct-loc-skip').onclick=()=>{r.skipped=true;r.matchStatus='skipped';r.sch='';r.locationName='';r.deliveryUrl='';tr.remove()};
-  });
-  const finish=ok=>{bg.remove();resolve(ok)};
-  m.querySelector('#'+P+'loc_cancel').onclick=()=>finish(false);
-  m.querySelector('#'+P+'loc_confirm').onclick=()=>{
-   for(const tr of [...tbody.querySelectorAll('tr')]){
-    const i=Number(tr.dataset.i);const r=rows[i];if(r.skipped)continue;
-    const sch=tr.querySelector('.ct-loc-pick')?.value?.trim()||'';
-    if(!sch){alert('Choose a deliver location for '+r.asset+' or skip the row.');return}
-    const hit=list.find(x=>x.sch===sch)||{sch,name:sch,url:ctDeliverUrlForSch(sch,'')};
-    r.sch=hit.sch;r.locationName=hit.name||hit.sch;r.deliveryUrl=hit.url||ctDeliverUrlForSch(hit.sch,'');r.matchStatus='resolved';r.skipped=false;r.candidates=[];
-   }
-   finish(true)
-  };
-  // Require Cancel button — backdrop click used to abort Both mid-flow by accident.
- })
 }
 function ctShowSingleDeliverLocationPick(items,title,blurb){
  return new Promise(resolve=>{
@@ -2780,92 +2340,10 @@ function ctAttachDeliverMetaToBatch(b,preparedRows,locationHint){
  return b;
 }
 async function ctResolveDeliverLocationsForBatch(batchId){
+ // School comes from the /drop page index during Deliver. Do not block on ticket lookup.
  try{
-  let b=load(batchId);if(!b)return{ok:false,msg:'Batch not found.'};
-  ctSetDropLiveStatus('DropMe pass complete. Loading deliver locations…');
-  await sleep(600);
-  let ctx={items:[],token:''};
-  try{ctx=await ctRemoteDropContext()}catch(_){}
-  if(!(ctx.items||[]).length){
-   ctSetDropLiveStatus('DropMe complete. Retrying deliver location scrape…');
-   await sleep(400);
-   try{ctx=await ctRemoteDropContext()}catch(_){}
-  }
-  if(ctx.token){b=load(batchId)||b;b.token=ctx.token;save(b)}
-  ctSyncDeliverLocationSelect(ctx.items||[]);
-  b=load(batchId)||b;
-  if(ctx.token)b.token=ctx.token;
-
-  // Prefer typed override when present.
-  const uiHint=ctUiDeliverLocationHint();
-  if(uiHint&&!b.perRow&&b.locationOverride!==false){
-   b.locationOverride=true;
-   ctAttachDeliverMetaToBatch(b,null,uiHint);save(b);
-   if(b.deliveryUrl)await ctGetWorkflowPage(b.deliveryUrl).catch(()=>{});
-   ctSetDropLiveStatus(`Deliver location override: ${b.locationName||b.location}. Starting Delivered…`);
-   return{ok:true};
-  }
-
-  // Background: resolve each asset from Col B / ticket (pickup → home school). No prompt when all resolve.
-  ctSetDropLiveStatus('DropMe complete. Auto-resolving deliver schools from tickets…');
-  const auto=await ctAutoResolveBatchDeliverSchools(batchId);
-  b=load(batchId)||b;
-
-  const sheet=(b.sheetRows&&b.sheetRows.length)?b.sheetRows:(ctDropRows||[]);
-  const usePerRow=!!(b.perRow&&sheet.length);
-  if(usePerRow){
-   const seed=sheet.map(r=>{
-    if(r.skipped)return{...r,matchStatus:'skipped',sch:'',locationName:'',deliveryUrl:''};
-    const m=b.assetMeta?.[String(r.asset||'').toLowerCase()];
-    if(m?.sch)return{...r,sch:m.sch,locationName:m.locationName||m.sch,deliveryUrl:m.deliveryUrl||ctDeliverUrlForSch(m.sch,''),matchStatus:'auto'};
-    if(r.matchStatus==='resolved'&&r.sch)return{...r};
-    return{...r,sch:'',locationName:'',deliveryUrl:'',matchStatus:r.requested?'pending':'blank',candidates:[]};
-   });
-   let prepared=(ctx.items||[]).length?ctApplyDropLocationMatches(seed,ctx.items):seed;
-   // Fill remaining blanks from ticket auto meta again
-   for(const r of prepared){
-    if(r.skipped||r.sch)continue;
-    const m=b.assetMeta?.[String(r.asset||'').toLowerCase()];
-    if(m?.sch){r.sch=m.sch;r.locationName=m.locationName||m.sch;r.deliveryUrl=m.deliveryUrl||ctDeliverUrlForSch(m.sch,'');r.matchStatus='auto'}
-   }
-   const need=prepared.filter(r=>!r.skipped&&['blank','none','multi','pending'].includes(r.matchStatus)&&!r.sch);
-   if(need.length&&(ctx.items||[]).length){
-    ctSetDropLiveStatus(`${need.length} row(s) need deliver location review before Delivered…`);
-    const ok=await ctShowDeliverLocationReview(prepared,ctx.items);
-    if(!ok)return{ok:false,msg:'Deliver location review cancelled. DropMe results were kept — run Delivered when ready.'};
-   }
-   // Rows still without sch proceed; deliverStage will try ticket again or fail that row only.
-   ctDropRows=prepared;
-   b=load(batchId)||b;
-   ctAttachDeliverMetaToBatch(b,prepared,null);
-   for(const r of prepared){
-    if(!r.skipped)continue;
-    const latest=load(batchId)||b;
-    const rr=ensureResult(latest,r.asset);
-    if(rr.final==='COMPLETE'||/^SKIPPED$/i.test(rr.deliver||''))continue;
-    rr.deliver='SKIPPED';rr.deliverMsg='Skipped in deliver location review.';if(ctModeNeedsReceive(latest.mode)){rr.receive='SKIPPED';rr.receiveMsg='Skipped in deliver location review.'}finalizeResult(rr,latest.mode);rr.time=new Date().toLocaleString();save(latest);
-   }
-   b=load(batchId)||b;
-   save(b);
-   const sum=ctDropMatchSummary(prepared);
-   ctSetDropLiveStatus(`Locations ready: ${sum.auto||auto.resolved} resolved`+(need.length?`, ${need.length} reviewed`:'')+`. Starting Delivered…`);
-   if(b.deliveryUrl)await ctGetWorkflowPage(b.deliveryUrl).catch(()=>{});
-   return{ok:true};
-  }
-
-  // Non-Col-B batch: ticket auto-resolve is enough; deliverStage fills any gaps per asset.
-  if(auto.resolved||Object.values(b.assetMeta||{}).some(m=>m?.sch)||b.location){
-   ctSetDropLiveStatus(`Auto-resolved ${auto.resolved} school(s)`+(auto.missing?`, ${auto.missing} will retry at Deliver`:'')+`. Starting Delivered…`);
-   if(b.deliveryUrl)await ctGetWorkflowPage(b.deliveryUrl).catch(()=>{});
-   return{ok:true};
-  }
-  if((ctx.items||[]).length===1){
-   ctAttachDeliverMetaToBatch(b,null,ctx.items[0].sch);save(b);
-   if(b.deliveryUrl)await ctGetWorkflowPage(b.deliveryUrl).catch(()=>{});
-   return{ok:true};
-  }
-  // Still nothing — continue anyway; per-asset ticket lookup runs during Deliver.
-  ctSetDropLiveStatus('Starting Delivered (schools auto-resolved from each ticket)…');
+  if(!load(batchId))return{ok:false,msg:'Batch not found.'};
+  ctSetDropLiveStatus('DropMe pass complete. Deliver schools come from /drop pages…');
   return{ok:true};
  }catch(e){
   console.error('[Cell Tech Power Processor] resolve deliver locations',e);
@@ -2904,23 +2382,28 @@ function ctCreateBatch(mode,tok,locationHint,preparedRows=null){
 }
 function ctDropReadyMessage(mode,locationName){if(!ctDropAssets.length)return'Load a spreadsheet with Asset IDs / serials in Column A'+(mode==='drop'||mode==='receive'?'':'; optional Deliver Location in Column B')+'.';return`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}.`}
 function ctUpdateDropStats(batch=null){const w=document.getElementById(CT_TOOL.workspace);if(!w)return;const vals=batch?summary(batch):{total:ctDropAssets.length,processed:0,complete:0,partial:0,failed:0};for(const [id,v] of Object.entries({ct_tools_drop_total:vals.total,ct_tools_drop_processed:vals.processed,ct_tools_drop_complete:vals.complete,ct_tools_drop_partial:vals.partial,ct_tools_drop_failed:vals.failed})){const el=w.querySelector('#'+id);if(el)el.textContent=v}}
-function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('drop'))}</h2><div>Load serials/assets, pick a workflow, and Unleash. Deliver schools auto-resolve from each ticket (Pickup → Home School). Receive uses /receivedevs. Location fields below are optional overrides only.</div><div class="ctw-grid" style="margin-top:14px"><div><label>Workflow</label><select id="ct_tools_mode"><option value="drop">Fixed/QC → DropMe</option><option value="deliver">Inbound/DropMe → Delivered</option><option value="both">Fixed/QC → DropMe → Delivered</option><option value="deliver_recv">Inbound/DropMe → Delivered → Receive</option><option value="receive">Delivered → Receive</option><option value="full">Fixed/QC → DropMe → Delivered → Receive</option></select></div><div><label>Spreadsheet</label><input id="${CT_TOOL.dropFile}" type="file" accept=".csv,.xlsx,.xlsm,.xls,.txt"><div style="font-size:12px;margin-top:5px;color:#666">Col A = Asset/Serial (required). Col B = Deliver Location (optional override).</div></div><div><label>Deliver Location <span style="font-weight:600;color:#888">(optional override)</span></label><select id="ct_tools_location"><option value="">Loading locations...</option></select><input id="ct_tools_location_manual" type="text" placeholder="Optional: force one school for whole batch" style="margin-top:6px"><button id="ct_tools_refresh_locations" style="margin-top:6px;width:100%">Refresh Deliver Locations</button></div></div><div class="ctw-actions"><button id="ct_tools_drop_go" class="go" disabled>${esc(ctActionLabel('UNLEASH THE POWER','START PROCESSOR'))}</button><button id="ct_tools_drop_pause" class="warn">PAUSE / RESUME</button><button id="ct_tools_drop_stop" class="bad">STOP</button><button id="ct_tools_drop_report">View Battle Report</button></div><div id="${CT_TOOL.dropStatus}" class="ctw-status">Load a spreadsheet.</div><div class="ctw-stats"><div class="ctw-stat">Total<b id="ct_tools_drop_total">${ctDropAssets.length||0}</b></div><div class="ctw-stat">Processed<b id="ct_tools_drop_processed">0</b></div><div class="ctw-stat">Complete<b id="ct_tools_drop_complete">0</b></div><div class="ctw-stat">Partial<b id="ct_tools_drop_partial">0</b></div><div class="ctw-stat">Failed<b id="ct_tools_drop_failed">0</b></div></div></div>`;
+function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('drop'))}</h2><div>Load serials/assets, pick a workflow, and Unleash. Deliver schools come from /drop pages. Receive uses /receivedevs. Clear all is only for Delivered → Receive. Location fields below are optional overrides.</div><div class="ctw-grid" style="margin-top:14px"><div><label>Workflow</label><select id="ct_tools_mode"><option value="drop">Fixed/QC → DropMe</option><option value="deliver">Inbound/DropMe → Delivered</option><option value="both">Fixed/QC → DropMe → Delivered</option><option value="deliver_recv">Inbound/DropMe → Delivered → Receive</option><option value="receive">Delivered → Receive</option><option value="full">Fixed/QC → DropMe → Delivered → Receive</option></select></div><div><label>Spreadsheet</label><input id="${CT_TOOL.dropFile}" type="file" accept=".csv,.xlsx,.xlsm,.xls,.txt"><div style="font-size:12px;margin-top:5px;color:#666">Col A = Asset/Serial (required). Col B = Deliver Location (optional override).</div><label id="ct_tools_clear_all_wrap" style="display:none;margin-top:8px"><input id="ct_tools_clear_all" type="checkbox"> Clear all — receive every device listed on /receivedevs</label></div><div><label>Deliver Location <span style="font-weight:600;color:#888">(optional override)</span></label><select id="ct_tools_location"><option value="">Loading locations...</option></select><input id="ct_tools_location_manual" type="text" placeholder="Optional: force one school for whole batch" style="margin-top:6px"><button id="ct_tools_refresh_locations" style="margin-top:6px;width:100%">Refresh Deliver Locations</button></div></div><div class="ctw-actions"><button id="ct_tools_drop_go" class="go" disabled>${esc(ctActionLabel('UNLEASH THE POWER','START PROCESSOR'))}</button><button id="ct_tools_drop_pause" class="warn">PAUSE / RESUME</button><button id="ct_tools_drop_stop" class="bad">STOP</button><button id="ct_tools_drop_report">View Battle Report</button></div><div id="${CT_TOOL.dropStatus}" class="ctw-status">Load a spreadsheet.</div><div class="ctw-stats"><div class="ctw-stat">Total<b id="ct_tools_drop_total">${ctDropAssets.length||0}</b></div><div class="ctw-stat">Processed<b id="ct_tools_drop_processed">0</b></div><div class="ctw-stat">Complete<b id="ct_tools_drop_complete">0</b></div><div class="ctw-stat">Partial<b id="ct_tools_drop_partial">0</b></div><div class="ctw-stat">Failed<b id="ct_tools_drop_failed">0</b></div></div></div>`;
  const f=c.querySelector('#'+CT_TOOL.dropFile),m=c.querySelector('#ct_tools_mode'),ls=c.querySelector('#ct_tools_location'),lm=c.querySelector('#ct_tools_location_manual'),go=c.querySelector('#ct_tools_drop_go'),st=c.querySelector('#'+CT_TOOL.dropStatus),refresh=c.querySelector('#ct_tools_refresh_locations');let remoteToken='';const chosen=()=>lm.value.trim()||ls.value.trim();
  const ready=()=>{
+  const clearWrap=c.querySelector('#ct_tools_clear_all_wrap');
+  const clearBox=c.querySelector('#ct_tools_clear_all');
+  if(clearWrap)clearWrap.style.display=ctModeReceiveOnly(m.value)?'block':'none';
+  const clearOn=!!(clearBox&&clearBox.checked&&ctModeReceiveOnly(m.value));
+  if(clearOn){st.textContent='Clear all: Unleash lists every device on /receivedevs, then asks before receiving.';go.disabled=false;return}
   if(!ctDropAssets.length){st.textContent='Load a spreadsheet with Asset IDs / serials in Column A.';go.disabled=true;return}
   if(m.value==='drop'){st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}.`;go.disabled=false;return}
   if(ctModeReceiveOnly(m.value)){
-   st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}. Receive schools resolve from /receivedevs (ticket school used as hint when available).`;
+   st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}. Receive schools come from /receivedevs.`;
    go.disabled=false;return
   }
   const recv=ctModeNeedsReceive(m.value)?' Then Receive.':'';
   const override=chosen()?` Override location: ${chosen()}.`:'';
   if(m.value==='both'||m.value==='full'){
-   st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}. DropMe first; deliver schools auto-resolve from each ticket.`+override+recv;
+   st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}. DropMe first; deliver schools come from /drop pages.`+override+recv;
    go.disabled=false;return
   }
   // deliver / deliver_recv — serials-only Unleash; no location required
-  st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}. Deliver locations will auto-resolve from each ticket.`+override+recv;
+  st.textContent=`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}. Deliver schools come from /drop pages.`+override+recv;
   go.disabled=false
  };
  const loadContext=async()=>{
@@ -2952,13 +2435,14 @@ function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<
    ready();
   }
  };
- f.onchange=async()=>{try{st.textContent='Reading spreadsheet...';ctDropActiveBatchId='';const parsed=await readDropFile(f.files[0]);ctDropRows=parsed.rows;ctDropPerRow=parsed.perRow;ctDropAssets=parsed.assets;ctDropFilename=f.files[0].name;if(ctDropPerRow&&ctDeliverLocationItems().length&&(m.value==='deliver'||m.value==='deliver_recv'))ctDropRows=ctApplyDropLocationMatches(ctDropRows,ctDeliverLocationItems());ctUpdateDropStats(null);ready();if(parsed.warnSchoolish){st.textContent=`Warning: Column A looks like school/location names (e.g. SchoolName(1234)), not Asset IDs/serials. Power Processor needs devices in Col A`+(m.value==='drop'?'':'; and deliver location in Col B')+`. Loaded ${ctDropAssets.length} row(s) from ${ctDropFilename}.`;alert('Column A looks like deliver locations / school keys, not Asset IDs.\n\nUse a sheet with Asset ID or Serial in Column A.\nDeliver location goes in Column B (or the Deliver Location dropdown).')}}catch(e){ctDropActiveBatchId='';ctDropAssets=[];ctDropRows=[];ctDropPerRow=false;ctDropFilename='';ctUpdateDropStats(null);st.textContent=e.message;go.disabled=true}};m.onchange=ready;ls.onchange=()=>{if(ls.value)lm.value='';ready()};lm.oninput=ready;refresh.onclick=loadContext;loadContext();
+ f.onchange=async()=>{try{st.textContent='Reading spreadsheet...';ctDropActiveBatchId='';const parsed=await readDropFile(f.files[0]);ctDropRows=parsed.rows;ctDropPerRow=parsed.perRow;ctDropAssets=parsed.assets;ctDropFilename=f.files[0].name;if(ctDropPerRow&&ctDeliverLocationItems().length&&(m.value==='deliver'||m.value==='deliver_recv'))ctDropRows=ctApplyDropLocationMatches(ctDropRows,ctDeliverLocationItems());ctUpdateDropStats(null);ready();if(parsed.warnSchoolish){st.textContent=`Warning: Column A looks like school/location names (e.g. SchoolName(1234)), not Asset IDs/serials. Power Processor needs devices in Col A`+(m.value==='drop'?'':'; and deliver location in Col B')+`. Loaded ${ctDropAssets.length} row(s) from ${ctDropFilename}.`;alert('Column A looks like deliver locations / school keys, not Asset IDs.\n\nUse a sheet with Asset ID or Serial in Column A.\nDeliver location goes in Column B (or the Deliver Location dropdown).')}}catch(e){ctDropActiveBatchId='';ctDropAssets=[];ctDropRows=[];ctDropPerRow=false;ctDropFilename='';ctUpdateDropStats(null);st.textContent=e.message;go.disabled=true}};m.onchange=ready;c.querySelector('#ct_tools_clear_all').onchange=ready;ls.onchange=()=>{if(ls.value)lm.value='';ready()};lm.oninput=ready;refresh.onclick=loadContext;loadContext();
  go.onclick=async()=>{
-  if(!ctDropAssets.length)return st.textContent='Load a spreadsheet first.';
+  const clearOn=ctModeReceiveOnly(m.value)&&!!c.querySelector('#ct_tools_clear_all')?.checked;
+  if(!ctDropAssets.length&&!clearOn)return st.textContent='Load a spreadsheet first.';
   go.disabled=true;
   try{
    st.textContent='Preparing RepairGenie session...';
-   let prepared=null,finalWhere=chosen();
+   let prepared=null,finalWhere=chosen(),clearPairs=null;
    if(m.value==='deliver'||m.value==='deliver_recv'){
     if(!remoteToken){
      try{const x=await ctRemoteDropContext();remoteToken=x.token;ctSyncDeliverLocationSelect(x.items||[])}catch(_){}
@@ -2980,22 +2464,37 @@ function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<
     }else if(finalWhere){
      ctDeliverLocationMap[finalWhere]=ctDeliverLocationMap[finalWhere]||{name:finalWhere,sch:finalWhere,url:ctDeliverUrlForSch(finalWhere,'')};
     }
-    const locNote=finalWhere?`Location override: ${finalWhere}`:'Locations: auto from each ticket (Pickup → Home School)';
+    const locNote=finalWhere?`Location override: ${finalWhere}`:'Locations: from /drop school pages';
     if(m.value==='deliver_recv'&&!confirm(`This will perform TWO status changes per device:\nInbound/DropMe → Delivered → Receive\n${locNote}\nDevices: ${ctDropAssets.length}\n\nContinue?`)){go.disabled=false;return}
    }else if(ctModeReceiveOnly(m.value)){
-    if(!confirm(`This will perform ONE status change per device:\nDelivered → Receive\nSchools: from /receivedevs (ticket school as hint when available)\nDevices: ${ctDropAssets.length}\n\nContinue?`)){go.disabled=false;return}
+    if(clearOn){
+     st.textContent='Reading /receivedevs (no changes yet)…';
+     const listed=await ctListClearAllReceive();
+     const schoolCount=new Set(listed.assets.map(x=>String(x.sch).toLowerCase())).size;
+     if(!listed.assets.length){go.disabled=false;return st.textContent='No devices are listed on /receivedevs.'}
+     if(!confirm(`Receive ${listed.assets.length} devices at ${schoolCount} schools?\n\nThis receives every device currently listed on /receivedevs.`)){go.disabled=false;return}
+     clearPairs=listed.assets;
+    }else if(!confirm(`This will perform ONE status change per device:\nDelivered → Receive\nSchools: from /receivedevs\nDevices: ${ctDropAssets.length}\n\nContinue?`)){go.disabled=false;return}
    }else if(m.value==='both'||m.value==='full'){
     if(!remoteToken){try{const x=await ctRemoteDropContext();remoteToken=x.token;ctSyncDeliverLocationSelect(x.items||[])}catch(_){}}
     prepared=ctDropPerRow?(ctDropRows||[]).map(r=>({...r})) : null;
     const steps=m.value==='full'?'THREE status changes per device:\nFixed/QC → DropMe → Delivered → Receive':'TWO status changes per device:\nFixed/QC → DropMe → Delivered';
-    const locNote=finalWhere?`Location override: ${finalWhere}`:'Locations: auto from each ticket after DropMe';
+    const locNote=finalWhere?`Location override: ${finalWhere}`:'Locations: from /drop school pages after DropMe';
     if(!confirm(`This will perform ${steps}\n${locNote}\nDevices: ${ctDropAssets.length}\n\nContinue?`)){go.disabled=false;return}
    }else if(!remoteToken){
     try{const x=await ctRemoteDropContext();remoteToken=x.token}catch(_){}
    }
    const batch=ctCreateBatch(m.value,remoteToken,finalWhere,ctDropPerRow?(prepared||ctDropRows):null);
+   if(clearPairs){
+    batch.assets=clearPairs.map(x=>x.asset);
+    batch.clearAll=true;
+    batch.fileName='Clear all /receivedevs';
+    batch.assetMeta={};
+    for(const x of clearPairs)batch.assetMeta[String(x.asset).toLowerCase()]={sch:x.sch,locationName:x.name,deliveryUrl:x.url||''};
+    save(batch);
+   }
    if(!batch.assets.length){go.disabled=false;return st.textContent='No devices to process.'}
-   ctClearWorkflowCache();ctClearDeliverPageCache();ctReceiveLocationMap={};ctRepairsFilterNames=null;await ctGetWorkflowPage(ctRouteUrl('/createdrop')).catch(()=>{});
+   ctClearWorkflowCache();ctClearDeliverPageCache();ctReceiveLocationMap={};await ctGetWorkflowPage(ctRouteUrl('/createdrop')).catch(()=>{});
    if((m.value==='deliver'||m.value==='deliver_recv')&&batch.deliveryUrl)await ctGetWorkflowPage(batch.deliveryUrl).catch(()=>{});
    if(ctModeNeedsReceive(m.value))ctLoadReceiveSchools(false).catch(()=>{});
    ctDropActiveBatchId=batch.id;ctUpdateDropStats(batch);st.textContent=`Starting ${batch.assets.length} device(s)...`;
@@ -3218,23 +2717,6 @@ function ctInfoTextValue(d,labels){
  }
  return''
 }
-function ctInfoParseTableRows(d,q,baseUrl){
- const n=ctInfoNorm(q),out=[];
- for(const table of d.querySelectorAll('table')){
-  const head=[...(table.tHead?.rows?.[0]?.cells||table.querySelectorAll('thead th'))].map(x=>(x.textContent||'').replace(/\s+/g,' ').trim());
-  if(!head.length)continue;
-  const map=ctInfoGuess(head);
-  for(const tr of table.querySelectorAll('tbody tr')){
-   const text=(tr.textContent||'').replace(/\s+/g,' ').trim();if(n&&!ctInfoNorm(text).includes(n))continue;
-   const cells=[...tr.cells];if(!cells.length)continue;
-   const obj={_sourceUrl:'',_source:'RepairGenie table'};for(let i=0;i<Math.min(head.length,cells.length);i++)obj[head[i]]=(cells[i].textContent||'').replace(/\s+/g,' ').trim();
-   for(const [field,h] of Object.entries(map))obj[field]=obj[h]||'';
-   const a=tr.querySelector('a[href]');if(a)try{obj._sourceUrl=new URL(a.getAttribute('href'),baseUrl||location.origin).href}catch(_){}
-   if(Object.values(obj).some(v=>ctInfoNorm(v)===n)||ctInfoNorm(text).includes(n))out.push(obj)
-  }
- }
- return out
-}
 function ctInfoParseDetail(html,url){
  const d=new DOMParser().parseFromString(html,'text/html'),u=new URL(url||location.href,location.origin),txt=(d.body?.textContent||'').replace(/\s+/g,' ');
  const data={
@@ -3253,19 +2735,56 @@ function ctInfoParseDetail(html,url){
  };
  return data
 }
-function ctInfoMatches(data,q){const n=ctInfoNorm(q);return['serial','asset','caseid','incident'].some(k=>ctInfoNorm(data?.[k])===n)||ctInfoNorm(Object.values(data||{}).join(' ')).includes(n)}
 function ctInfoDedupe(rows){const seen=new Set(),out=[];for(const r of rows){const k=[r.caseid,r.serial,r.asset,r.incident,r._sourceUrl].map(ctInfoNorm).join('|');if(seen.has(k))continue;seen.add(k);out.push(r)}return out}
 async function ctInfoFetchPage(path){const url=ctRouteUrl(path);try{const r=await fetch(url,{credentials:'include',cache:'no-store',redirect:'follow'});if(!r.ok)return{html:'',url:r.url||url};return{html:await r.text(),url:r.url||url}}catch(_){return{html:'',url}}}
-function ctInfoCandidateInputs(d){
- const names=[];for(const e of d.querySelectorAll('input[name],select[name]')){const name=e.name||'',label=((e.getAttribute('placeholder')||'')+' '+name+' '+(d.querySelector(`label[for="${CSS.escape(e.id||'')}"]`)?.textContent||'')).toLowerCase();if(/msb|serial|asset|case|incident|reference/.test(label))names.push(name)}return[...new Set(names)].slice(0,8)
+function ctInfoPick(row,...keys){for(const k of keys){if(row&&row[k]!=null&&String(row[k]).trim())return String(row[k]).trim()}return''}
+function ctInfoFromApiRow(row,source){
+ if(!row||typeof row!=='object')return null;
+ return{
+  serial:ctInfoPick(row,'serialno','serial','Serial'),
+  asset:ctInfoPick(row,'assetid','MSB_tag','msb_tag','asset'),
+  caseid:ctInfoPick(row,'id','caseid','case_id'),
+  incident:ctInfoPick(row,'incident','incidentid','incident_id','inc'),
+  approval:ctInfoPick(row,'approval','approval_status','now_approval'),
+  cost:ctInfoPick(row,'cost','repair_cost','price'),
+  pickup:ctInfoPick(row,'pickup','pickup_location','pickupschool','pickup_school'),
+  device:ctInfoPick(row,'device','device_type','model','product'),
+  school:ctInfoPick(row,'school','schoolname','home_school','homeschool','location'),
+  status:ctInfoPick(row,'progress','status'),
+  claimtype:ctInfoPick(row,'claimtype','claim_type','warranty'),
+  _sourceUrl:'',_source:source||'RepairGenie status API'
+ };
 }
-function ctInfoLinksFromDoc(d,base,q){
- const n=ctInfoNorm(q),urls=[];for(const a of d.querySelectorAll('a[href]')){let u;try{u=new URL(a.getAttribute('href'),base)}catch(_){continue}const hay=ctInfoNorm((a.textContent||'')+' '+u.href+' '+(a.closest('tr')?.textContent||''));if(!hay.includes(n))continue;if(/login|logout|javascript:/i.test(u.href))continue;urls.push(u.href)}return[...new Set(urls)].slice(0,12)
+function ctInfoExactApiRow(rows,value){
+ const n=rgNorm(value);
+ return (rows||[]).find(x=>[x?.assetid,x?.MSB_tag,x?.serialno,x?.serial,x?.id].some(v=>rgNorm(v)===n))||null;
+}
+async function ctInfoCustomerId(){
+ const ck=P+'customer_'+location.hostname;
+ const cached=localStorage.getItem(ck);
+ if(cached&&/^\d+$/.test(cached))return Number(cached);
+ const res=await apiGet(location.origin+'/localapi/customers');
+ if(!res.ok)return null;
+ const data=Array.isArray(res.data)?res.data:(res.data?.data||[]);
+ if(!Array.isArray(data))return null;
+ const names=rgInterfaceNames().map(rgNorm);
+ let matches=data.filter(x=>names.includes(rgNorm(x?.name)));
+ if(matches.length!==1){const host=rgNorm(location.hostname.split('.')[0]);matches=data.filter(x=>rgNorm(x?.name)===host)}
+ if(matches.length!==1)return null;
+ const cid=Number(matches[0]?.id);
+ if(!Number.isFinite(cid))return null;
+ localStorage.setItem(ck,String(cid));
+ return cid;
+}
+async function ctInfoApiRows(cid,path,pairs){
+ const q=new URLSearchParams(pairs);
+ const res=await apiGet(`${location.origin}/localapi/${cid}/${path}?${q.toString()}`);
+ if(!res.ok)return [];
+ return rgRows(res.data);
 }
 async function ctInfoLiveLookup(q,onStatus){
  const value=String(q||'').trim();if(!value)throw Error('Scan or enter a Serial, Asset ID, Case ID, or Incident ID.');
  const hits=[];
- const addRows=(rows)=>{for(const r of rows||[])if(ctInfoMatches(r,value))hits.push(r)};
  if(/^workshop\./i.test(location.hostname)){
   const customer=ctResetCustomerByName(ctResetGuessCustomer());
   if(customer&&/^\d+$/.test(value)){
@@ -3273,18 +2792,55 @@ async function ctInfoLiveLookup(q,onStatus){
   }
   return ctInfoDedupe(hits)
  }
- onStatus?.('Searching live RepairGenie...');
- const pages=[];
- const known=`/nowarrenty?reports%5Bfilters%5D%5BMSB_Tag-like%5D=${encodeURIComponent(value)}`;pages.push(await ctInfoFetchPage(known));
- const repairsBase=await ctInfoFetchPage('/repairs');pages.push(repairsBase);
- if(repairsBase.html){
-  const rd=new DOMParser().parseFromString(repairsBase.html,'text/html');const inputs=ctInfoCandidateInputs(rd);
-  for(let i=0;i<inputs.length&&i<5;i++){const sp=new URLSearchParams();sp.set(inputs[i],value);onStatus?.('Querying RepairGenie '+(i+1)+'/'+Math.min(inputs.length,5)+'...');pages.push(await ctInfoFetchPage('/repairs?'+sp.toString()))}
+ onStatus?.('Checking RepairGenie status…');
+ const cid=await ctInfoCustomerId();
+ let row=null,source='';
+ if(cid){
+  const keys=[['assetid',value],['serial',value]];
+  if(/^\d+$/.test(value))keys.push(['caseid',value]);
+  for(const [key,val] of keys){
+   const pairs=RG_STATUSES.map(st=>['status[]',st]);
+   pairs.push([key,val]);
+   const hit=ctInfoExactApiRow(await ctInfoApiRows(cid,'getstatusworkorders',pairs),value);
+   if(hit){row=hit;source='RepairGenie status API';break}
+  }
+  if(!row){
+   onStatus?.('Checking in-shop lookup…');
+   const res=await apiGet(`${location.origin}/localapi/shim/${cid}/${encodeURIComponent(value)}`);
+   const hit=res.ok?ctInfoExactApiRow(rgRows(res.data),value):null;
+   if(hit){row=hit;source='RepairGenie in-shop lookup'}
+  }
+  if(!row){
+   onStatus?.('Checking delivered tickets…');
+   for(const key of ['assetid','serial','caseid']){
+    if(key==='caseid'&&!/^\d+$/.test(value))continue;
+    const hit=ctInfoExactApiRow(await ctInfoApiRows(cid,'getdelivered',[[key,value]]),value);
+    if(hit){row=hit;source='RepairGenie delivered API';break}
+   }
+  }
  }
- const current=new DOMParser().parseFromString(document.documentElement.outerHTML,'text/html');addRows(ctInfoParseTableRows(current,value,location.href));
- const detailUrls=new Set();
- for(const p of pages){if(!p.html)continue;const d=new DOMParser().parseFromString(p.html,'text/html');addRows(ctInfoParseTableRows(d,value,p.url));for(const u of ctInfoLinksFromDoc(d,p.url,value))detailUrls.add(u)}
- for(const u of [...detailUrls].slice(0,10)){onStatus?.('Opening matching RepairGenie record...');const x=await ctInfoFetchPage(u);if(!x.html)continue;const data=ctInfoParseDetail(x.html,x.url);if(ctInfoMatches(data,value))hits.push(data)}
+ if(!row)return [];
+ const mapped=ctInfoFromApiRow(row,source);
+ if(!mapped.school||!mapped.pickup||!mapped.approval||!mapped.cost){
+  onStatus?.('Opening one ticket page for missing fields…');
+  const needle=mapped.asset||mapped.serial||value;
+  const list=await ctInfoFetchPage('/nowarrenty?reports%5Bfilters%5D%5BMSB_Tag-like%5D='+encodeURIComponent(needle));
+  let detailUrl='';
+  if(list.html){
+   const d=new DOMParser().parseFromString(list.html,'text/html');
+   const link=[...d.querySelectorAll('a[href*="nowarrentyrec"]')].find(el=>ctInfoNorm((el.closest('tr')?.textContent||'')+' '+(el.textContent||'')).includes(ctInfoNorm(needle)));
+   if(link){try{detailUrl=new URL(link.getAttribute('href'),location.origin).href}catch(_){}}
+  }
+  if(detailUrl){
+   const page=await ctInfoFetchPage(detailUrl);
+   if(page.html){
+    const detail=ctInfoParseDetail(page.html,page.url);
+    for(const k of ['serial','asset','caseid','incident','approval','cost','pickup','device','school','status','claimtype'])if(!mapped[k]&&detail[k])mapped[k]=detail[k];
+    mapped._sourceUrl=detail._sourceUrl||detailUrl;
+   }
+  }
+ }
+ if(mapped.serial||mapped.asset||mapped.caseid||mapped.status)hits.push(mapped);
  return ctInfoDedupe(hits)
 }
 function ctInfoRenderLive(rows,q){
