@@ -2,8 +2,8 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.42
-// @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Shop Score, and Days in Shop.
+// @version      2.31.48
+// @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Battle Tally, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
 
@@ -59,8 +59,8 @@ function ctNashShout(force=false){
  }catch(e){console.warn('[Cell Tech Tools] Nash theme sound failed:',e)}
 }
 function ctToolLabel(tab){
- const fun={drop:'Power Processor',parts:'Parts Forge',reset:'Rewind the Battle',minions:'Release the Minions',info:'Castle Grayskull Intel',reports:'Battle Reports',shopscore:'Shop Score',settings:'Settings'};
- const plain={drop:'Drop / Delivery Processor',parts:'Parts Uploader',reset:'Reset Case',minions:'Release Non-Warranty Hold',info:'Info Finder',reports:'Results / Reports',shopscore:'My Counts',settings:'Settings'};
+ const fun={drop:'Power Processor',parts:'Parts Forge',reset:'Rewind the Battle',minions:'Release the Minions',info:'Castle Grayskull Intel',reports:'Battle Reports',techtally:'Battle Tally',settings:'Settings'};
+ const plain={drop:'Drop / Delivery Processor',parts:'Parts Uploader',reset:'Reset Case',minions:'Release Non-Warranty Hold',info:'Info Finder',reports:'Results / Reports',techtally:'Tech Counts',settings:'Settings'};
  return (ctLameMode()?plain:fun)[tab]||tab
 }
 function ctActionLabel(fun,plain){return ctLameMode()?plain:fun}
@@ -847,7 +847,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.42'}catch(_){return'2.31.42'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.48'}catch(_){return'2.31.48'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1561,7 +1561,7 @@ function ctAddSideMenu(){
   }
   return
  }
- const tabs=['drop','parts','reset','minions','info','reports','shopscore','settings'];
+ const tabs=['drop','parts','reset','minions','info','reports','techtally','settings'];
  const li=document.createElement('li');li.id=CT_TOOL.menu;
  li.innerHTML='<a href="#"><span class="ct-bolt">'+(ctLameMode()?'':'⚡')+'</span>Cell Tech Tools <small style="font-size:10px;font-weight:700;opacity:.72;margin-left:5px;white-space:nowrap">v'+CT_VERSION+'</small> <span style="float:right">▾</span></a><ul style="display:none">'+tabs.map(t=>'<li><a href="#" data-cttool="'+t+'">'+esc(ctToolLabel(t))+'</a></li>').join('')+'</ul>';
  const anchor=[...list.children].find(x=>/search/i.test((x.textContent||'').trim()));if(anchor)list.insertBefore(li,anchor);else list.appendChild(li);
@@ -1573,7 +1573,7 @@ function ctCloseWorkspace(){document.getElementById(CT_TOOL.workspace)?.remove()
 function ctOpenWorkspace(tab='drop'){
  if(!ctTopWindow())return;ctToolStyles();let w=document.getElementById(CT_TOOL.workspace);if(!w){w=document.createElement('div');w.id=CT_TOOL.workspace;document.body.appendChild(w)}
  w.style.left=ctSidebarWidth()+'px';ctApplyWorkspaceTheme();
- const tabs=['drop','parts','reset','minions','info','reports','shopscore','settings'];
+ const tabs=['drop','parts','reset','minions','info','reports','techtally','settings'];
  w.innerHTML='<div class="ctw-top"><h1>Cell Tech RepairGenie Tools <small style="font-size:14px;color:#777">v '+CT_VERSION+'</small></h1><div style="display:flex;gap:8px;align-items:center"><button id="ct_tools_lame_top" style="border:1px solid #bbb;background:'+(ctLameMode()?'#333':'#fff')+';color:'+(ctLameMode()?'#fff':'#333')+';border-radius:7px;padding:8px 12px;cursor:pointer;font-weight:700">'+(ctLameMode()?'FUN MODE':'LAME MODE')+'</button><button id="ct_tools_close" style="border:0;background:#eee;border-radius:7px;padding:8px 12px;cursor:pointer">Close</button></div></div><div class="ctw-body"><div class="ctw-tabs">'+tabs.map(t=>'<button data-tab="'+t+'">'+esc(ctToolLabel(t))+'</button>').join('')+'</div><div id="ct_tools_content"></div></div>';
  w.querySelector('#ct_tools_close').onclick=ctCloseWorkspace;
  w.querySelector('#ct_tools_lame_top').onclick=()=>ctSetLameMode(!ctLameMode());
@@ -1585,7 +1585,7 @@ function ctRenderToolTab(tab){
  const w=document.getElementById(CT_TOOL.workspace);if(!w)return;
  w.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
  const box=w.querySelector('#ct_tools_content');
- if(tab==='drop')ctRenderDropTool(box);else if(tab==='parts')ctRenderPartsTool(box);else if(tab==='reset')ctRenderResetTool(box);else if(tab==='minions')ctRenderMinionsTool(box);else if(tab==='info')ctRenderInfoTool(box);else if(tab==='reports')ctRenderReports(box);else if(tab==='shopscore')ctRenderShopScoreTool(box);else ctRenderSettings(box)
+ if(tab==='drop')ctRenderDropTool(box);else if(tab==='parts')ctRenderPartsTool(box);else if(tab==='reset')ctRenderResetTool(box);else if(tab==='minions')ctRenderMinionsTool(box);else if(tab==='info')ctRenderInfoTool(box);else if(tab==='reports')ctRenderReports(box);else if(tab==='techtally')ctRenderTechTally(box);else ctRenderSettings(box)
 }
 function ctRepairGenieBase(){const p=location.pathname.toLowerCase();return location.origin+(p==='/rgsite'||p.startsWith('/rgsite/')?'/rgsite':'')}
 function ctRouteUrl(path){path=String(path||'');if(/^https?:\/\//i.test(path))return path;return ctRepairGenieBase()+(path.startsWith('/')?path:'/'+path)}
@@ -2873,6 +2873,111 @@ function ctRenderInfoTool(box){
  box.querySelector('#ct_info_export').onclick=()=>ctInfoExportWorkbook().catch(e=>alert('Could not export workbook.\n\n'+(e?.message||e)));setTimeout(()=>scan.focus(),50)
 }
 
+function ctTallyHeaderKey(h){return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
+function ctTallyName(v){
+ const t=String(v??'').replace(/\s+/g,' ').trim();
+ if(!t||/^(n\/a|na|none|-|null|undefined)$/i.test(t))return'';
+ return t;
+}
+function ctTallyDayKey(v){
+ const t=String(v??'').trim();
+ if(!t)return'';
+ let m=t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+ if(m)return m[1]+'-'+m[2]+'-'+m[3];
+ m=t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+ if(m){
+  let y=m[3];
+  if(y.length===2)y=String(2000+Number(y));
+  return y+'-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0');
+ }
+ const months={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+ m=t.match(/^(\d{1,2})[-\s]([A-Za-z]{3,9})[-\s,]+(\d{4})/);
+ if(m){
+  const mo=months[m[2].slice(0,3).toLowerCase()];
+  if(mo)return m[3]+'-'+mo+'-'+m[1].padStart(2,'0');
+ }
+ if(/^\d+(\.\d+)?$/.test(t)){
+  const n=Number(t);
+  if(n>20000&&n<80000){
+   const d=new Date(Date.UTC(1899,11,30)+Math.floor(n)*86400000);
+   return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+  }
+ }
+ const parsed=new Date(t);
+ if(!Number.isNaN(parsed.getTime()))return parsed.getFullYear()+'-'+String(parsed.getMonth()+1).padStart(2,'0')+'-'+String(parsed.getDate()).padStart(2,'0');
+ return '';
+}
+function ctTallyShowDay(key){
+ const m=String(key||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ if(!m)return String(key||'');
+ return new Date(Number(m[1]),Number(m[2])-1,Number(m[3])).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+}
+function ctTechTallyFromGrid(grid,fromKey,throughKey){
+ const from=String(fromKey||'').trim(),through=String(throughKey||'').trim();
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(through))throw Error('Choose a start date and an end date first.');
+ if(through<from)throw Error('Through must be the same day as From, or a later day.');
+ const rows=Array.isArray(grid)?grid:[];
+ const header=(rows[0]||[]).map(ctTallyHeaderKey);
+ const idx={};
+ header.forEach((key,i)=>{if(key&&idx[key]==null)idx[key]=i});
+ const need=[['fixedby','Fixed by'],['fixeddate','Fixed date'],['qcby','QC by'],['qcdate','QC date'],['workingdate','Working date']];
+ const missing=need.filter(([key])=>idx[key]==null).map(([,label])=>label);
+ const workingNameIdx=idx.workingby!=null?idx.workingby:idx.working;
+ if(workingNameIdx==null)missing.push('Working by');
+ if(missing.length)throw Error('Missing column'+(missing.length>1?'s':'')+': '+missing.join(', ')+'.');
+ const nameAt=(row,i)=>ctTallyName(row[i]);
+ const dayAt=(row,i)=>ctTallyDayKey(row[i]);
+ const techs=new Map();
+ const bump=(name,field)=>{
+  const key=name.toLowerCase();
+  let rec=techs.get(key);
+  if(!rec){rec={name,fixed:0,qc:0,working:0};techs.set(key,rec)}
+  rec[field]++;
+ };
+ let read=0,skippedBlank=0;
+ const credit=(row,nameIdx,dateIdx,field)=>{
+  const day=dayAt(row,dateIdx);
+  if(!day||day<from||day>through)return;
+  const name=nameAt(row,nameIdx);
+  if(name)bump(name,field);
+  else skippedBlank++;
+ };
+ for(let r=1;r<rows.length;r++){
+  const row=rows[r]||[];
+  if(!row.some(v=>String(v??'').trim()))continue;
+  read++;
+  credit(row,idx.fixedby,idx.fixeddate,'fixed');
+  credit(row,idx.qcby,idx.qcdate,'qc');
+  credit(row,workingNameIdx,idx.workingdate,'working');
+ }
+ const list=[...techs.values()].sort((a,b)=>b.fixed-a.fixed||b.qc-a.qc||b.working-a.working||a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+ return{read,skippedBlank,from,through,list};
+}
+function ctRenderTechTally(c){
+ c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('techtally'))}</h2><div>Pick a date range, then choose a spreadsheet. Count credits Fixed, QC, and Working only when that name is filled and its date falls on From, Through, or a day between them.</div><div class="ctw-grid" style="margin-top:14px"><div><label>From</label><input id="ct_tally_from" type="date" style="width:100%"></div><div><label>Through</label><input id="ct_tally_through" type="date" style="width:100%"></div><div><label>Spreadsheet</label><input id="ct_tally_file" type="file" accept=".csv,.xlsx,.xlsm,.xls"></div></div><div class="ctw-actions" style="margin-top:12px"><button type="button" id="ct_tally_go" class="go" disabled>Count</button></div><div id="ct_tally_status" class="ctw-status">Choose a start date, an end date, and a spreadsheet.</div><div id="ct_tally_out"></div></div>`;
+ const from=c.querySelector('#ct_tally_from'),through=c.querySelector('#ct_tally_through'),file=c.querySelector('#ct_tally_file'),go=c.querySelector('#ct_tally_go'),st=c.querySelector('#ct_tally_status'),out=c.querySelector('#ct_tally_out');
+ const sync=()=>{go.disabled=!(from.value&&through.value&&file.files&&file.files[0])};
+ from.oninput=sync;
+ through.oninput=sync;
+ file.onchange=sync;
+ go.onclick=async()=>{
+  if(!from.value||!through.value||!file.files||!file.files[0])return;
+  if(through.value<from.value){st.textContent='Through must be the same day as From, or a later day.';out.innerHTML='';return}
+  try{
+   st.textContent='Reading spreadsheet...';out.innerHTML='';
+   const wb=XLSX.read(await ctFileBuffer(file.files[0]),{type:'array'});
+   const ws=wb.Sheets[wb.SheetNames[0]];
+   if(!ws)throw Error('The spreadsheet has no readable worksheet.');
+   const tally=ctTechTallyFromGrid(XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false}),from.value,through.value);
+   const totals=tally.list.reduce((s,r)=>({fixed:s.fixed+r.fixed,qc:s.qc+r.qc,working:s.working+r.working}),{fixed:0,qc:0,working:0});
+   const td='style="padding:8px 10px;border-bottom:1px solid #eee"';
+   const num='style="padding:8px 10px;border-bottom:1px solid #eee;text-align:right"';
+   const body=tally.list.length?tally.list.map(r=>`<tr><td ${td}>${esc(r.name)}</td><td ${num}>${r.fixed}</td><td ${num}>${r.qc}</td><td ${num}>${r.working}</td></tr>`).join(''):`<tr><td colspan="4" ${td}>No techs in this range.</td></tr>`;
+   st.textContent=`${tally.read} rows read. ${tally.skippedBlank} credits skipped because the name was blank.`;
+   out.innerHTML=`<h3 style="margin:14px 0 8px;font-size:16px">${esc(ctTallyShowDay(tally.from))} \u2013 ${esc(ctTallyShowDay(tally.through))}</h3><div style="max-height:58vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;border-bottom:2px solid #ccc"><th style="padding:8px 10px">Tech</th><th style="padding:8px 10px;text-align:right">Fixed</th><th style="padding:8px 10px;text-align:right">QC</th><th style="padding:8px 10px;text-align:right">Working</th></tr></thead><tbody>${body}</tbody><tfoot><tr style="border-top:2px solid #ccc;font-weight:700"><td style="padding:8px 10px">Total</td><td style="padding:8px 10px;text-align:right">${totals.fixed}</td><td style="padding:8px 10px;text-align:right">${totals.qc}</td><td style="padding:8px 10px;text-align:right">${totals.working}</td></tr></tfoot></table></div>`;
+  }catch(e){st.textContent=e?.message||String(e);out.innerHTML=''}
+ };
+}
 function ctRenderReports(c){const b=latest(),s=b?summary(b):null,p=ctPartsStats(),rr=ctResetStats(),mr=ctMinionStats();c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('reports'))}</h2><div class="ctw-actions"><button id="ct_tools_last_drop">Drop / Delivery Report</button><button id="ct_tools_last_parts">Parts Report</button><button id="ct_tools_last_reset">${esc(ctActionLabel('Rewind Report','Reset Report'))}</button><button id="ct_tools_last_minions">${esc(ctActionLabel('Minions Report','Hold Release Report'))}</button>${b?'<button id="ct_tools_drop_csv">Drop CSV</button><button id="ct_tools_drop_xlsx">Drop XLSX</button>':''}${ctResults().length?'<button id="ct_tools_parts_xlsx">Parts XLSX</button>':''}${ctResetResults().length?'<button id="ct_tools_reset_xlsx">Reset XLSX</button>':''}${ctMinionResults().length?'<button id="ct_tools_minion_xlsx">Minions XLSX</button>':''}</div>${b?`<div class="ctw-status">Last Drop Batch: ${esc(b.modeName)} — ${s.complete}/${s.total} complete, ${s.failed} failed.</div>`:'<div class="ctw-status">No Drop / Delivery batch found.</div>'}<div class="ctw-status">Parts: ${p.complete}/${p.total} successful, ${p.failed} failed, ${p.partial} skipped.</div><div class="ctw-status">Rewind Battles: ${rr.success} successful, ${rr.failed} failed, ${rr.checked} checked-only.</div><div class="ctw-status">Release the Minions: ${mr.released} released, ${mr.skipped} skipped, ${mr.failed} failed.</div></div>`;c.querySelector('#ct_tools_last_drop').onclick=()=>{const x=latest();if(x)modal(x);else alert('No Drop / Delivery report found.')};c.querySelector('#ct_tools_last_parts').onclick=()=>ctPartsModal();c.querySelector('#ct_tools_last_reset').onclick=ctResetModal;c.querySelector('#ct_tools_last_minions').onclick=ctMinionReportModal;c.querySelector('#ct_tools_drop_csv')?.addEventListener('click',()=>dlCSV(latest()));c.querySelector('#ct_tools_drop_xlsx')?.addEventListener('click',()=>dlXLSX(latest()));c.querySelector('#ct_tools_parts_xlsx')?.addEventListener('click',ctDownloadPartsResults);c.querySelector('#ct_tools_reset_xlsx')?.addEventListener('click',ctDownloadResetResults);c.querySelector('#ct_tools_minion_xlsx')?.addEventListener('click',ctDownloadMinionResults)}
 const CT_UPDATE_META_URL='https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.meta.js';
 const CT_UPDATE_SCRIPT_URL='https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.user.js';
@@ -2894,14 +2999,6 @@ function ctRenderSettings(c){
  <div>${themeControl()}<div style="margin-top:10px"><label><input id="ct_tools_rave_reduce" type="checkbox" ${localStorage.getItem(CT_RAVE_REDUCE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Reduce Motion (Eternia After Dark)</label><label><input id="ct_tools_rave_strobe" type="checkbox" ${localStorage.getItem(CT_RAVE_STROBE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Color Strobe — stepped color jumps, no white flashes</label><label style="margin-top:8px">Rave Speed: <b id="ct_tools_rave_speed_label">${ctRaveSpeedLabel()}</b><input id="ct_tools_rave_speed" type="range" min="1" max="7" step="1" value="${ctRaveSpeed()}" style="width:100%;margin-top:5px" ${lame?'disabled':''}><small style="display:flex;justify-content:space-between"><span>Slow</span><span>Maximum</span></small></label><label><input id="ct_tools_rave_quiet" type="checkbox" ${localStorage.getItem(CT_RAVE_QUIET_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Quiet Mode — no rave tab beat</label></div></div>
  <div><label>Processing Speed</label><select id="ct_tools_speed"><option value="safe">Safe — full verification</option><option value="fast">Fast — cached forms + smart verification</option><option value="turbo">Turbo — up to 3 devices at once</option></select></div>
  ${ctSettingsUpdateCard()}
- <div style="grid-column:1/-1;margin-top:8px;padding-top:12px;border-top:1px solid #ddd"><h3 style="margin:0 0 10px;font-size:16px">Shop Score</h3>
- <div class="ctw-grid">
- <div><label>Sheet endpoint (Apps Script URL)</label><input id="ct_shop_endpoint" type="url" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%" value="${esc(ctShopEndpoint())}"><div class="ctw-status" style="margin-top:6px">Leads: paste Apps Script URL here for the Lead board. Techs should install the separate Shop Score Counter script only (Repair-Genie-Tool/shop-score/CellTech_Shop_Score_Counter.user.js) — do not install both on one PC.</div></div>
- <div><label>Display name override</label><input id="ct_shop_name" type="text" placeholder="Optional — if RG name is ugly" style="width:100%" value="${esc(ctShopNameOverride())}"></div>
- <div><label>View mode</label><select id="ct_shop_mode" style="width:100%"><option value="lead">Lead — all techs by workshop</option><option value="tech">My counts (optional)</option></select></div>
- <div><label>Lead PIN (optional)</label><input id="ct_shop_pin" type="password" autocomplete="new-password" placeholder="Shared PIN to open Lead board" style="width:100%" value="${esc(ctShopPin())}"></div>
- <div><label><input id="ct_shop_track" type="checkbox" ${ctShopTrackOn()?'checked':''}> Count Fixed / Working clicks on ticket pages</label></div>
- </div></div>
  </div><div class="ctw-status"><b>Browser:</b> ${esc(ctBrowserName())}. Compatibility target: current Chrome, Edge, Firefox, and Brave with Tampermonkey. <b>Lame Mode:</b> presentation-only, shared across all RepairGenie sites; processing behavior does not change. <b>Safe:</b> sequential with API verification. <b>Fast:</b> sequential, caches forms/tokens and trusts explicit RepairGenie success responses. <b>Turbo:</b> same optimizations plus up to 3 concurrent devices. Days in Shop and saved table layouts remain active in either mode.</div></div>`;
  c.querySelector('#ct_tools_lame_settings').onclick=()=>ctSetLameMode(!ctLameMode());
  const sound=c.querySelector('#ct_tools_sound');sound.onchange=e=>{localStorage.setItem(P+'sound',e.target.checked?'1':'0');if(e.target.checked&&!ctLameMode())ctUnlockAudio()};
@@ -2912,11 +3009,6 @@ function ctRenderSettings(c){
  const rs=c.querySelector('#ct_tools_rave_strobe');rs.onchange=e=>{if(e.target.checked){const ok=confirm('⚠️ FLASHING COLOR WARNING\n\nColor Strobe uses abrupt full-background color changes. Even though it is intentionally slow and never flashes white, it may still cause discomfort for people sensitive to flashing or rapidly changing visuals.\n\nEnable Color Strobe?');if(!ok){e.target.checked=false;return}}localStorage.setItem(CT_RAVE_STROBE_KEY,e.target.checked?'1':'0');ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};
  const rv=c.querySelector('#ct_tools_rave_speed'),rvl=c.querySelector('#ct_tools_rave_speed_label');rv.oninput=e=>{const n=Math.max(1,Math.min(7,Number(e.target.value)||4));localStorage.setItem(CT_RAVE_SPEED_KEY,String(n));if(rvl)rvl.textContent=ctRaveSpeedLabel(n);ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};
  const rq=c.querySelector('#ct_tools_rave_quiet');rq.onchange=e=>localStorage.setItem(CT_RAVE_QUIET_KEY,e.target.checked?'1':'0');
- const shopEp=c.querySelector('#ct_shop_endpoint');if(shopEp)shopEp.onchange=e=>ctShopSetEndpoint(e.target.value);
- const shopName=c.querySelector('#ct_shop_name');if(shopName)shopName.onchange=e=>ctShopSetNameOverride(e.target.value);
- const shopMode=c.querySelector('#ct_shop_mode');if(shopMode){shopMode.value=ctShopMode();shopMode.onchange=e=>{ctShopSetMode(e.target.value);ctShopSetLeadUnlocked(false)}}
- const shopPin=c.querySelector('#ct_shop_pin');if(shopPin)shopPin.onchange=e=>ctShopSetPin(e.target.value);
- const shopTrack=c.querySelector('#ct_shop_track');if(shopTrack)shopTrack.onchange=e=>ctShopSetTrack(e.target.checked);
  ctBindUpdater(c)
 }
 function ctRefreshToolWorkspace(){
@@ -2986,6 +3078,15 @@ function ctShopMinuteKey(d=new Date()){
 
 function ctShopScrapeIdentity(){
  const override=ctShopNameOverride();
+ let name=override||'';
+ try{
+  const raw=localStorage.getItem('user');
+  if(raw){
+   const u=JSON.parse(raw);
+   if(!name&&u?.name)name=String(u.name).trim();
+   if(!name&&u?.email)name=String(u.email).trim();
+  }
+ }catch(_){}
  const picks=[];
  const push=(v)=>{v=String(v||'').replace(/\s+/g,' ').trim();if(v&&v.length<80)picks.push(v)};
  try{
@@ -2996,7 +3097,6 @@ function ctShopScrapeIdentity(){
   const meta=document.querySelector('meta[name="user"],meta[name="username"]');
   if(meta)push(meta.content);
  }catch(_){}
- let name=override||'';
  if(!name){
   for(const p of picks){
    const t=p.replace(/^(hi|hello|welcome)[,:]?\s+/i,'').replace(/\s*[▾▼▼]\s*$/,'').trim();
@@ -3010,7 +3110,8 @@ function ctShopScrapeIdentity(){
  return {techId,techName:override||name};
 }
 
-function ctShopAssetHint(){
+function ctShopAssetHint(extra){
+ if(extra)return String(extra);
  const trySel=(sel)=>{try{const el=document.querySelector(sel);const v=(el?.value||el?.textContent||'').trim();return v||''}catch(_){return''}};
  const candidates=[
   trySel('#AssetTag'),trySel('#assetTag'),trySel('#SerialNumber'),trySel('#serialNumber'),
@@ -3019,8 +3120,8 @@ function ctShopAssetHint(){
  ];
  for(const c of candidates){if(c&&c.length<80)return c}
  try{
-  const m=location.pathname.match(/\/(case|repair|ticket|device)\/([^/]+)/i);
-  if(m)return m[2];
+  const m=location.pathname.match(/\/(?:case-details|case|repair|ticket|device)\/([^/]+)/i);
+  if(m)return m[1];
  }catch(_){}
  return '';
 }
@@ -3073,9 +3174,9 @@ function ctShopRequest(payload){
  });
 }
 
-function ctShopPostEvent(actionType){
+function ctShopPostEvent(actionType,assetOrCase){
  const id=ctShopScrapeIdentity();
- const asset=ctShopAssetHint();
+ const asset=ctShopAssetHint(assetOrCase);
  const minute=ctShopMinuteKey();
  const eventId=ctShopHashId([id.techId,actionType,asset,minute]);
  if(ctShopSeenId(eventId))return Promise.resolve({ok:true,duplicate:true,stats:ctShopLastStats});
@@ -3149,10 +3250,70 @@ function ctShopActionFromElement(el){
  return '';
 }
 
+function ctShopIsRg4Host(){
+ return /^rgv4/i.test(location.hostname)||/\/workshop\//i.test(location.pathname);
+}
+function ctShopParseMaybeJson(text){
+ try{return JSON.parse(text)}catch(_){return null}
+}
+function ctShopHandleRg4Network(url,method,reqBody,status){
+ if(!ctShopTrackOn()||!ctShopEndpoint())return;
+ if(!(status>=200&&status<300))return;
+ const u=String(url||'');
+ const m=String(method||'GET').toUpperCase();
+ if(m==='PUT'&&/\/repair\/mark-as-fixed(?:\?|$)/i.test(u)){
+  let wo='';
+  const body=typeof reqBody==='string'?ctShopParseMaybeJson(reqBody):reqBody;
+  if(body&&body.work_order_id!=null)wo=String(body.work_order_id);
+  if(!wo){
+   const path=location.pathname.match(/\/case-details\/([^/]+)/i);
+   if(path)wo=path[1];
+  }
+  ctShopPostEvent('fixed',wo||'rg4-mark-as-fixed').catch(()=>{});
+ }
+}
+function ctShopPageWindow(){
+ try{if(typeof unsafeWindow!=='undefined'&&unsafeWindow)return unsafeWindow}catch(_){}
+ return window;
+}
+function ctShopBindRg4NetworkHooks(){
+ const host=ctShopPageWindow();
+ if(!host||host.__ctShopRg4NetBound)return;
+ host.__ctShopRg4NetBound=true;
+ const origFetch=host.fetch;
+ if(typeof origFetch==='function'){
+  host.fetch=function(input,init){
+   const method=(init&&init.method)||(input&&input.method)||'GET';
+   const url=typeof input==='string'?input:(input&&input.url)||'';
+   const reqBody=init&&init.body;
+   return origFetch.apply(this,arguments).then(res=>{
+    try{ctShopHandleRg4Network(url,method,reqBody,res.status)}catch(_){}
+    return res;
+   });
+  };
+ }
+ const XHR=host.XMLHttpRequest;
+ if(!XHR||!XHR.prototype||XHR.prototype.__ctShopRg4Send)return;
+ const XO=XHR.prototype.open,XS=XHR.prototype.send;
+ XHR.prototype.open=function(method,url){
+  this.__ctShopMethod=method;
+  this.__ctShopUrl=url;
+  return XO.apply(this,arguments);
+ };
+ XHR.prototype.send=function(body){
+  this.addEventListener('load',()=>{
+   try{ctShopHandleRg4Network(this.__ctShopUrl,this.__ctShopMethod,body,this.status)}catch(_){}
+  });
+  return XS.apply(this,arguments);
+ };
+ XHR.prototype.__ctShopRg4Send=true;
+}
+
 function ctShopMaybeCapture(el){
  if(!ctShopTrackOn())return;
  if(!ctShopEndpoint())return;
  if(/workshop\.repairgenie\.net/i.test(location.hostname))return;
+ if(ctShopIsRg4Host())return;
  const action=ctShopActionFromElement(el);
  if(!action)return;
  ctShopPostEvent(action).catch(()=>{});
@@ -3162,6 +3323,7 @@ function ctInitShopScore(){
  if(!ctTopWindow())return;
  if(window.__ctShopScoreBound)return;
  window.__ctShopScoreBound=true;
+ ctShopBindRg4NetworkHooks();
  document.addEventListener('click',e=>{
   const t=e.target;
   if(!t)return;
@@ -3222,7 +3384,7 @@ function ctRenderShopScoreTech(c,title,id,day,lame){
   <button type="button" id="ct_shop_refresh">${esc(ctActionLabel('REFRESH TALLY','REFRESH'))}</button>
   <button type="button" id="ct_shop_ping">TEST LINK</button>
  </div>
- <div id="ct_shop_msg" class="ctw-status" style="margin-top:10px">${esc(ctShopLastMsg||'Counts update when you set a ticket to Fixed or Working on this site.')}</div>
+ <div id="ct_shop_msg" class="ctw-status" style="margin-top:10px">${esc(ctShopLastMsg||(ctShopIsRg4Host()?'RG4: Fixed counts when you use Mark as Fixed.':'Counts update when you set a ticket to Fixed or Working on this site.'))}</div>
  </div>`;
  const setMsg=t=>{const m=c.querySelector('#ct_shop_msg');if(m)m.textContent=t};
  c.querySelector('#ct_shop_refresh').onclick=()=>{
@@ -3601,6 +3763,6 @@ function ctUpdateDays(){
 }
 function ctInitDays(){setTimeout(ctUpdateDays,500);setTimeout(ctUpdateDays,1500);setTimeout(ctUpdateDays,3000);if(ctDayObs)return;ctDayObs=new MutationObserver(()=>{clearTimeout(ctDayTimer);ctDayTimer=setTimeout(ctUpdateDays,300)});ctDayObs.observe(document.body,{childList:true,subtree:true})}
 document.addEventListener('click',e=>{ctRaveArmSidebarNav(e);if(e.target.closest('#ct_tools_workspace button,.rgbp button'))ctUnlockAudio()},true);
-function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();ctInitSearchLayout();ctInitShopScore();setInterval(ctRefreshToolWorkspace,1000);try{if(sessionStorage.getItem(P+'update_reopen')==='1'){sessionStorage.removeItem(P+'update_reopen');setTimeout(()=>ctOpenWorkspace('settings'),500)}}catch(_){}}
+function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();ctInitSearchLayout();setInterval(ctRefreshToolWorkspace,1000);try{if(sessionStorage.getItem(P+'update_reopen')==='1'){sessionStorage.removeItem(P+'update_reopen');setTimeout(()=>ctOpenWorkspace('settings'),500)}}catch(_){}}
 ctInit();
 })();
