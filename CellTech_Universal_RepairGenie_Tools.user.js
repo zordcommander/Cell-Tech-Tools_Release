@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.48
+// @version      2.31.49
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Battle Tally, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -847,7 +847,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.48'}catch(_){return'2.31.48'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.49'}catch(_){return'2.31.49'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -3762,7 +3762,41 @@ function ctUpdateDays(){
  }
 }
 function ctInitDays(){setTimeout(ctUpdateDays,500);setTimeout(ctUpdateDays,1500);setTimeout(ctUpdateDays,3000);if(ctDayObs)return;ctDayObs=new MutationObserver(()=>{clearTimeout(ctDayTimer);ctDayTimer=setTimeout(ctUpdateDays,300)});ctDayObs.observe(document.body,{childList:true,subtree:true})}
+let ctWarrantyClosed=false;
+function ctWarrantyDaysUntil(key){
+ const m=String(key||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ if(!m)return null;
+ const end=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
+ const now=new Date();
+ const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+ return Math.round((end-today)/86400000);
+}
+function ctWarrantyCurrent(){
+ for(const row of document.querySelectorAll('tr')){
+  const text=String(row.textContent||'').replace(/\s+/g,' ').trim();
+  if(!/\(Current\)/.test(text))continue;
+  const end=(text.match(/End Date\s*:\s*(\d{4}-\d{2}-\d{2})/i)||[])[1];
+  if(!end)continue;
+  const name=(text.match(/Name\s*:\s*(.+?)\s+End Date/i)||[])[1]||'';
+  return{end,name:name.trim()};
+ }
+ return null;
+}
+function ctWarrantyScan(){
+ if(ctWarrantyClosed||document.getElementById('ct_warranty_notice'))return;
+ const info=ctWarrantyCurrent();
+ if(!info)return;
+ const days=ctWarrantyDaysUntil(info.end);
+ if(days==null||days<0||days>7)return;
+ const when=days===0?'today':days===1?'in 1 day':'in '+days+' days';
+ const box=document.createElement('div');
+ box.id='ct_warranty_notice';
+ box.setAttribute('style','position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99980;max-width:560px;width:calc(100% - 32px);background:#fff8e8;color:#333;border:1px solid #e0b44a;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.16);padding:14px 16px;font:14px/1.4 system-ui,Segoe UI,sans-serif;display:flex;gap:12px;align-items:flex-start;justify-content:space-between');
+ box.innerHTML=`<div><b>Warranty ends ${when}.</b> ${esc(info.name)}${info.name?' · ':''}${esc(info.end)}</div><button type="button" style="border:0;background:#333;color:#fff;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:700">Close</button>`;
+ box.querySelector('button').onclick=()=>{ctWarrantyClosed=true;box.remove()};
+ document.body.appendChild(box);
+}
 document.addEventListener('click',e=>{ctRaveArmSidebarNav(e);if(e.target.closest('#ct_tools_workspace button,.rgbp button'))ctUnlockAudio()},true);
-function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();ctInitSearchLayout();setInterval(ctRefreshToolWorkspace,1000);try{if(sessionStorage.getItem(P+'update_reopen')==='1'){sessionStorage.removeItem(P+'update_reopen');setTimeout(()=>ctOpenWorkspace('settings'),500)}}catch(_){}}
+function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();ctInitSearchLayout();ctWarrantyScan();setTimeout(ctWarrantyScan,1000);setInterval(ctRefreshToolWorkspace,1000);try{if(sessionStorage.getItem(P+'update_reopen')==='1'){sessionStorage.removeItem(P+'update_reopen');setTimeout(()=>ctOpenWorkspace('settings'),500)}}catch(_){}}
 ctInit();
 })();
