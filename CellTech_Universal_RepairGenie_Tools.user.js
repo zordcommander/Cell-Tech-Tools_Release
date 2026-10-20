@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.54
+// @version      2.31.55
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Battle Tally, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -847,7 +847,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.54'}catch(_){return'2.31.54'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.55'}catch(_){return'2.31.55'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -3259,6 +3259,10 @@ function ctShopLoadMyStats(){
   return data;
  });
 }
+function ctShopLeadWorkshop(){
+ const id=ctShopScrapeIdentity();
+ return ctShopRequest({action:'getMyStats',techId:id.techId,techName:id.techName,dayKey:ctShopDayKey()}).then(data=>String(data.workshop||'').trim());
+}
 function ctShopLoadBoard(dayKey,workshop){
  const payload={action:'getBoard',dayKey:dayKey||ctShopDayKey()};
  if(workshop)payload.workshop=workshop;
@@ -3498,7 +3502,15 @@ function ctRenderShopScoreLead(c,title,id,day,lame){
  const load=()=>{
   const d=c.querySelector('#ct_shop_day')?.value||day;
   setMsg('Loading board…');
-  ctShopLoadBoard(d,'').then(()=>{ctShopLastMsg=`Board ${d}`;ctRenderShopScoreLead(c,title,id,day,lame)}).catch(err=>setMsg(String(err.message||err)));
+  ctShopLeadWorkshop().then(workshop=>{
+   if(!workshop||workshop.toLowerCase()==='unassigned'){
+    ctShopLastBoard={dayKey:d,techs:[],totals:{fixed:0,working:0,qc:0}};
+    ctShopLastMsg='No location on the roster for '+id.techName+' ('+id.techId+').';
+    ctRenderShopScoreLead(c,title,id,day,lame);
+    return;
+   }
+   return ctShopLoadBoard(d,workshop).then(()=>{ctShopLastMsg=workshop+' · '+d;ctRenderShopScoreLead(c,title,id,day,lame)});
+  }).catch(err=>setMsg(String(err.message||err)));
  };
  c.querySelector('#ct_shop_refresh').onclick=load;
  c.querySelector('#ct_shop_lock').onclick=()=>{ctShopSetLeadUnlocked(false);ctRenderShopScoreLead(c,title,id,day,lame)};
