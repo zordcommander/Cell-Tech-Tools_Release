@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.53
+// @version      2.31.54
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Battle Tally, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -847,7 +847,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.53'}catch(_){return'2.31.53'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.54'}catch(_){return'2.31.54'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -3053,8 +3053,9 @@ const CT_SHOP_UNLOCK_KEY='ct_shop_lead_unlocked';
 const CT_SHOP_RECENT_KEY='ct_shop_recent_ids';
 let ctShopLastStats=null,ctShopLastBoard=null,ctShopLastMsg='',ctShopPollTimer=null;
 
-const CT_SHOP_DEFAULT_ENDPOINT='https://script.google.com/macros/s/AKfycbxau02Xhut6-V53_8SVAbHDNOqpEVyh8mDyjWo_ZN3KUEOefkM178YgEL_lFVbZUotD1Q/exec';
-function ctShopEndpoint(){try{return String((typeof GM_getValue==='function'?GM_getValue(CT_SHOP_ENDPOINT_KEY,''):'')||localStorage.getItem(CT_SHOP_ENDPOINT_KEY)||'').trim()||CT_SHOP_DEFAULT_ENDPOINT}catch(_){return String(localStorage.getItem(CT_SHOP_ENDPOINT_KEY)||'').trim()||CT_SHOP_DEFAULT_ENDPOINT}}
+const CT_SHOP_OLD_ENDPOINT='https://script.google.com/macros/s/AKfycbxau02Xhut6-V53_8SVAbHDNOqpEVyh8mDyjWo_ZN3KUEOefkM178YgEL_lFVbZUotD1Q/exec';
+const CT_SHOP_DEFAULT_ENDPOINT='https://script.google.com/macros/s/AKfycbyB2BNy-3JFWHYTzV4VQzXcUOlhaW64Mi4AB55MmdFt1BMDOxEUM4o_lo0nzmZBE4K2sQ/exec';
+function ctShopEndpoint(){try{const saved=String((typeof GM_getValue==='function'?GM_getValue(CT_SHOP_ENDPOINT_KEY,''):'')||localStorage.getItem(CT_SHOP_ENDPOINT_KEY)||'').trim();return (!saved||saved===CT_SHOP_OLD_ENDPOINT)?CT_SHOP_DEFAULT_ENDPOINT:saved}catch(_){const saved=String(localStorage.getItem(CT_SHOP_ENDPOINT_KEY)||'').trim();return (!saved||saved===CT_SHOP_OLD_ENDPOINT)?CT_SHOP_DEFAULT_ENDPOINT:saved}}
 function ctShopSetEndpoint(v){v=String(v||'').trim();try{if(typeof GM_setValue==='function')GM_setValue(CT_SHOP_ENDPOINT_KEY,v)}catch(_){}localStorage.setItem(CT_SHOP_ENDPOINT_KEY,v)}
 function ctShopMode(){const m=String(localStorage.getItem(CT_SHOP_MODE_KEY)||'lead').toLowerCase();return m==='tech'?'tech':'lead'}
 function ctShopSetMode(m){localStorage.setItem(CT_SHOP_MODE_KEY,m==='lead'?'lead':'tech')}
@@ -3094,6 +3095,15 @@ function ctShopScrapeIdentity(){
    if(!name&&u?.email)name=String(u.email).trim();
   }
  }catch(_){}
+ if(!name){
+  try{
+   document.querySelectorAll('.navbar-top-links').forEach(el=>{
+    if(name)return;
+    const t=String(el.textContent||'').replace(/\s+/g,' ').trim();
+    if(t&&t.length<80&&!/repair interface|user management/i.test(t))name=t;
+   });
+  }catch(_){}
+ }
  const picks=[];
  const push=(v)=>{v=String(v||'').replace(/\s+/g,' ').trim();if(v&&v.length<80)picks.push(v)};
  try{
@@ -3117,22 +3127,35 @@ function ctShopScrapeIdentity(){
  return {techId,techName:override||name};
 }
 
-function ctShopAssetHint(extra){
- if(extra)return String(extra).trim();
- const trySel=(sel)=>{try{const el=document.querySelector(sel);const v=(el?.value||el?.textContent||'').trim();return v||''}catch(_){return''}};
- const repairId=trySel('[name="repairid"]')||trySel('#repairid');
- if(repairId)return repairId;
+function ctShopLabeledValue(labelRe){
  try{
-  const nodes=document.querySelectorAll('b');
-  for(const b of nodes){
-   if(!/incident\s*id/i.test(b.textContent||''))continue;
-   const raw=(b.parentElement?.textContent||'').replace(/incident\s*id\s*:?\s*/i,' ').trim();
+  const nodes=document.querySelectorAll('b, strong');
+  for(const node of nodes){
+   const label=String(node.textContent||'').trim();
+   if(!labelRe.test(label))continue;
+   const link=node.nextElementSibling;
+   if(link&&/^a$/i.test(link.tagName)){
+    const linkText=String(link.textContent||'').trim();
+    if(linkText&&linkText.length<80)return linkText;
+   }
+   const raw=String(node.parentElement?.textContent||'').replace(label,' ').replace(/^[\s:]+/,'').trim();
    const m=raw.match(/[A-Za-z0-9][A-Za-z0-9-]*/);
    if(m)return m[0];
   }
  }catch(_){}
- const tag=trySel('[name="MSB_Tag"]')||trySel('#MSB_Tag')||trySel('[name="serialno"]')||trySel('#serialno');
- if(tag)return tag;
+ return '';
+}
+function ctShopAssetHint(extra){
+ if(extra)return String(extra).trim();
+ const trySel=(sel)=>{try{const el=document.querySelector(sel);const v=(el?.value||el?.textContent||'').trim();return v||''}catch(_){return''}};
+ const incident=ctShopLabeledValue(/^incident\s*id\b/i);
+ if(incident)return incident;
+ const asset=ctShopLabeledValue(/^asset\s*id\b/i)||trySel('[name="MSB_Tag"]')||trySel('#MSB_Tag');
+ if(asset)return asset;
+ const serial=trySel('[name="serialno"]')||trySel('#serialno')||ctShopLabeledValue(/^serial\b/i);
+ if(serial)return serial;
+ const repairId=trySel('[name="repairid"]')||trySel('#repairid')||trySel('#qcform [name="id"]');
+ if(repairId)return repairId;
  const candidates=[
   trySel('#AssetTag'),trySel('#assetTag'),trySel('#SerialNumber'),trySel('#serialNumber'),
   trySel('[name="AssetTag"]'),trySel('[name="SerialNumber"]'),trySel('[name="CaseId"]'),trySel('#CaseId'),
@@ -3850,7 +3873,7 @@ function ctInitQcCapture(){
   if(!hit)return;
   const qc=ctQcFormAction(hit);
   if(!qc)return;
-  ctShopPostEvent(qc.action,qc.repairId).catch(()=>{});
+  ctShopPostEvent(qc.action).catch(()=>{});
  },true);
 }
 function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();ctInitSearchLayout();ctInitQcCapture();ctWarrantyScan();setTimeout(ctWarrantyScan,1000);setInterval(ctRefreshToolWorkspace,1000);try{if(sessionStorage.getItem(P+'update_reopen')==='1'){sessionStorage.removeItem(P+'update_reopen');setTimeout(()=>ctOpenWorkspace('settings'),500)}}catch(_){}}
