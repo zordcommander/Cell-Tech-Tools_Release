@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.50
+// @version      2.31.53
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Battle Tally, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -847,7 +847,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.50'}catch(_){return'2.31.50'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.53'}catch(_){return'2.31.53'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1545,7 +1545,7 @@ function ctSetFallbackMinimized(on){
  const el=document.getElementById('ct_tools_fallback');if(!el)return;
  el.classList.toggle('is-min',!!on);
  const min=el.querySelector('.ct-tools-fallback-min');
- if(min){min.textContent=on?'›':'–';min.title=on?'Show Cell Tech Tools':'Minimize Cell Tech Tools'}
+ if(min){min.textContent=on?'›':'–';min.title=on?'Show Cell Tech Admin Tool':'Minimize Cell Tech Admin Tool'}
 }
 function ctAddSideMenu(){
  if(!ctTopWindow()||document.getElementById(CT_TOOL.menu))return;
@@ -1554,7 +1554,7 @@ function ctAddSideMenu(){
   if(!document.getElementById('ct_tools_fallback')){
    const minOn=ctFallbackMinimized();
    const b=document.createElement('div');b.id='ct_tools_fallback';b.className='ct-tools-fallback'+(minOn?' is-min':'');
-   b.innerHTML='<button type="button" class="ct-tools-fallback-min" title="'+(minOn?'Show Cell Tech Tools':'Minimize Cell Tech Tools')+'">'+(minOn?'›':'–')+'</button><button type="button" class="ct-tools-fallback-open">Cell Tech Tools v'+CT_VERSION+'</button>';
+   b.innerHTML='<button type="button" class="ct-tools-fallback-min" title="'+(minOn?'Show Cell Tech Admin Tool':'Minimize Cell Tech Admin Tool')+'">'+(minOn?'›':'–')+'</button><button type="button" class="ct-tools-fallback-open">Cell Tech Admin Tool v'+CT_VERSION+'</button>';
    b.querySelector('.ct-tools-fallback-open').onclick=()=>ctOpenWorkspace('drop');
    b.querySelector('.ct-tools-fallback-min').onclick=e=>{e.preventDefault();e.stopPropagation();ctSetFallbackMinimized(!ctFallbackMinimized())};
    document.body.appendChild(b)
@@ -1563,7 +1563,7 @@ function ctAddSideMenu(){
  }
  const tabs=['drop','parts','reset','minions','info','reports','techtally','settings'];
  const li=document.createElement('li');li.id=CT_TOOL.menu;
- li.innerHTML='<a href="#"><span class="ct-bolt">'+(ctLameMode()?'':'⚡')+'</span>Cell Tech Tools <small style="font-size:10px;font-weight:700;opacity:.72;margin-left:5px;white-space:nowrap">v'+CT_VERSION+'</small> <span style="float:right">▾</span></a><ul style="display:none">'+tabs.map(t=>'<li><a href="#" data-cttool="'+t+'">'+esc(ctToolLabel(t))+'</a></li>').join('')+'</ul>';
+ li.innerHTML='<a href="#"><span class="ct-bolt">'+(ctLameMode()?'':'⚡')+'</span>Cell Tech Admin Tool <small style="font-size:10px;font-weight:700;opacity:.72;margin-left:5px;white-space:nowrap">v'+CT_VERSION+'</small> <span style="float:right">▾</span></a><ul style="display:none">'+tabs.map(t=>'<li><a href="#" data-cttool="'+t+'">'+esc(ctToolLabel(t))+'</a></li>').join('')+'</ul>';
  const anchor=[...list.children].find(x=>/search/i.test((x.textContent||'').trim()));if(anchor)list.insertBefore(li,anchor);else list.appendChild(li);
  const top=li.querySelector(':scope > a'),sub=li.querySelector('ul');
  top.onclick=e=>{e.preventDefault();sub.style.display=sub.style.display==='none'?'block':'none';ctOpenWorkspace('drop')};
@@ -1574,7 +1574,7 @@ function ctOpenWorkspace(tab='drop'){
  if(!ctTopWindow())return;ctToolStyles();let w=document.getElementById(CT_TOOL.workspace);if(!w){w=document.createElement('div');w.id=CT_TOOL.workspace;document.body.appendChild(w)}
  w.style.left=ctSidebarWidth()+'px';ctApplyWorkspaceTheme();
  const tabs=['drop','parts','reset','minions','info','reports','techtally','settings'];
- w.innerHTML='<div class="ctw-top"><h1>Cell Tech RepairGenie Tools <small style="font-size:14px;color:#777">v '+CT_VERSION+'</small></h1><div style="display:flex;gap:8px;align-items:center"><button id="ct_tools_lame_top" style="border:1px solid #bbb;background:'+(ctLameMode()?'#333':'#fff')+';color:'+(ctLameMode()?'#fff':'#333')+';border-radius:7px;padding:8px 12px;cursor:pointer;font-weight:700">'+(ctLameMode()?'FUN MODE':'LAME MODE')+'</button><button id="ct_tools_close" style="border:0;background:#eee;border-radius:7px;padding:8px 12px;cursor:pointer">Close</button></div></div><div class="ctw-body"><div class="ctw-tabs">'+tabs.map(t=>'<button data-tab="'+t+'">'+esc(ctToolLabel(t))+'</button>').join('')+'</div><div id="ct_tools_content"></div></div>';
+ w.innerHTML='<div class="ctw-top"><h1>Cell Tech Admin Tool <small style="font-size:14px;color:#777">v '+CT_VERSION+'</small></h1><div style="display:flex;gap:8px;align-items:center"><button id="ct_tools_lame_top" style="border:1px solid #bbb;background:'+(ctLameMode()?'#333':'#fff')+';color:'+(ctLameMode()?'#fff':'#333')+';border-radius:7px;padding:8px 12px;cursor:pointer;font-weight:700">'+(ctLameMode()?'FUN MODE':'LAME MODE')+'</button><button id="ct_tools_close" style="border:0;background:#eee;border-radius:7px;padding:8px 12px;cursor:pointer">Close</button></div></div><div class="ctw-body"><div class="ctw-tabs">'+tabs.map(t=>'<button data-tab="'+t+'">'+esc(ctToolLabel(t))+'</button>').join('')+'</div><div id="ct_tools_content"></div></div>';
  w.querySelector('#ct_tools_close').onclick=ctCloseWorkspace;
  w.querySelector('#ct_tools_lame_top').onclick=()=>ctSetLameMode(!ctLameMode());
  w.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ctRaveTabSound();ctRenderToolTab(b.dataset.tab)});
@@ -2954,7 +2954,7 @@ function ctTechTallyFromGrid(grid,fromKey,throughKey){
  return{read,skippedBlank,from,through,list};
 }
 function ctRenderTechTally(c){
- c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('techtally'))}</h2><div>Pick a date range, then choose a spreadsheet. Count credits Fixed, QC, and Working only when that name is filled and its date falls on From, Through, or a day between them.</div><div class="ctw-grid" style="margin-top:14px"><div><label>From</label><input id="ct_tally_from" type="date" style="width:100%"></div><div><label>Through</label><input id="ct_tally_through" type="date" style="width:100%"></div><div><label>Spreadsheet</label><input id="ct_tally_file" type="file" accept=".csv,.xlsx,.xlsm,.xls"></div></div><div class="ctw-actions" style="margin-top:12px"><button type="button" id="ct_tally_go" class="go" disabled>Count</button></div><div id="ct_tally_status" class="ctw-status">Choose a start date, an end date, and a spreadsheet.</div><div id="ct_tally_out"></div></div>`;
+ c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('techtally'))}</h2><div>Pick a date range, then choose a spreadsheet. Count credits Fixed, QC, and Working only when that name is filled and its date falls on From, Through, or a day between them.</div><div class="ctw-grid" style="margin-top:14px"><div><label>From</label><input id="ct_tally_from" type="date" style="width:100%"></div><div><label>Through</label><input id="ct_tally_through" type="date" style="width:100%"></div><div><label>Spreadsheet</label><input id="ct_tally_file" type="file" accept=".csv,.xlsx,.xlsm,.xls"></div></div><div class="ctw-actions" style="margin-top:12px"><button type="button" id="ct_tally_go" class="go" disabled>Count</button></div><div id="ct_tally_status" class="ctw-status">Choose a start date, an end date, and a spreadsheet.</div><div id="ct_tally_out"></div></div><div id="ct_tally_live"></div>`;
  const from=c.querySelector('#ct_tally_from'),through=c.querySelector('#ct_tally_through'),file=c.querySelector('#ct_tally_file'),go=c.querySelector('#ct_tally_go'),st=c.querySelector('#ct_tally_status'),out=c.querySelector('#ct_tally_out');
  const sync=()=>{go.disabled=!(from.value&&through.value&&file.files&&file.files[0])};
  from.oninput=sync;
@@ -2977,6 +2977,11 @@ function ctRenderTechTally(c){
    out.innerHTML=`<h3 style="margin:14px 0 8px;font-size:16px">${esc(ctTallyShowDay(tally.from))} \u2013 ${esc(ctTallyShowDay(tally.through))}</h3><div style="max-height:58vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;border-bottom:2px solid #ccc"><th style="padding:8px 10px">Tech</th><th style="padding:8px 10px;text-align:right">Fixed</th><th style="padding:8px 10px;text-align:right">QC</th><th style="padding:8px 10px;text-align:right">Working</th></tr></thead><tbody>${body}</tbody><tfoot><tr style="border-top:2px solid #ccc;font-weight:700"><td style="padding:8px 10px">Total</td><td style="padding:8px 10px;text-align:right">${totals.fixed}</td><td style="padding:8px 10px;text-align:right">${totals.qc}</td><td style="padding:8px 10px;text-align:right">${totals.working}</td></tr></tfoot></table></div>`;
   }catch(e){st.textContent=e?.message||String(e);out.innerHTML=''}
  };
+ ctRenderTallyLive(c.querySelector('#ct_tally_live'));
+}
+function ctRenderTallyLive(c){
+ if(!c)return;
+ ctRenderShopScoreLead(c,esc('Action play by Play'),ctShopScrapeIdentity(),ctShopDayKey(),ctLameMode());
 }
 function ctRenderReports(c){const b=latest(),s=b?summary(b):null,p=ctPartsStats(),rr=ctResetStats(),mr=ctMinionStats();c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('reports'))}</h2><div class="ctw-actions"><button id="ct_tools_last_drop">Drop / Delivery Report</button><button id="ct_tools_last_parts">Parts Report</button><button id="ct_tools_last_reset">${esc(ctActionLabel('Rewind Report','Reset Report'))}</button><button id="ct_tools_last_minions">${esc(ctActionLabel('Minions Report','Hold Release Report'))}</button>${b?'<button id="ct_tools_drop_csv">Drop CSV</button><button id="ct_tools_drop_xlsx">Drop XLSX</button>':''}${ctResults().length?'<button id="ct_tools_parts_xlsx">Parts XLSX</button>':''}${ctResetResults().length?'<button id="ct_tools_reset_xlsx">Reset XLSX</button>':''}${ctMinionResults().length?'<button id="ct_tools_minion_xlsx">Minions XLSX</button>':''}</div>${b?`<div class="ctw-status">Last Drop Batch: ${esc(b.modeName)} — ${s.complete}/${s.total} complete, ${s.failed} failed.</div>`:'<div class="ctw-status">No Drop / Delivery batch found.</div>'}<div class="ctw-status">Parts: ${p.complete}/${p.total} successful, ${p.failed} failed, ${p.partial} skipped.</div><div class="ctw-status">Rewind Battles: ${rr.success} successful, ${rr.failed} failed, ${rr.checked} checked-only.</div><div class="ctw-status">Release the Minions: ${mr.released} released, ${mr.skipped} skipped, ${mr.failed} failed.</div></div>`;c.querySelector('#ct_tools_last_drop').onclick=()=>{const x=latest();if(x)modal(x);else alert('No Drop / Delivery report found.')};c.querySelector('#ct_tools_last_parts').onclick=()=>ctPartsModal();c.querySelector('#ct_tools_last_reset').onclick=ctResetModal;c.querySelector('#ct_tools_last_minions').onclick=ctMinionReportModal;c.querySelector('#ct_tools_drop_csv')?.addEventListener('click',()=>dlCSV(latest()));c.querySelector('#ct_tools_drop_xlsx')?.addEventListener('click',()=>dlXLSX(latest()));c.querySelector('#ct_tools_parts_xlsx')?.addEventListener('click',ctDownloadPartsResults);c.querySelector('#ct_tools_reset_xlsx')?.addEventListener('click',ctDownloadResetResults);c.querySelector('#ct_tools_minion_xlsx')?.addEventListener('click',ctDownloadMinionResults)}
 const CT_UPDATE_META_URL='https://raw.githubusercontent.com/zordcommander/Cell-Tech-Tools_Release/main/CellTech_Universal_RepairGenie_Tools.meta.js';
@@ -3113,8 +3118,21 @@ function ctShopScrapeIdentity(){
 }
 
 function ctShopAssetHint(extra){
- if(extra)return String(extra);
+ if(extra)return String(extra).trim();
  const trySel=(sel)=>{try{const el=document.querySelector(sel);const v=(el?.value||el?.textContent||'').trim();return v||''}catch(_){return''}};
+ const repairId=trySel('[name="repairid"]')||trySel('#repairid');
+ if(repairId)return repairId;
+ try{
+  const nodes=document.querySelectorAll('b');
+  for(const b of nodes){
+   if(!/incident\s*id/i.test(b.textContent||''))continue;
+   const raw=(b.parentElement?.textContent||'').replace(/incident\s*id\s*:?\s*/i,' ').trim();
+   const m=raw.match(/[A-Za-z0-9][A-Za-z0-9-]*/);
+   if(m)return m[0];
+  }
+ }catch(_){}
+ const tag=trySel('[name="MSB_Tag"]')||trySel('#MSB_Tag')||trySel('[name="serialno"]')||trySel('#serialno');
+ if(tag)return tag;
  const candidates=[
   trySel('#AssetTag'),trySel('#assetTag'),trySel('#SerialNumber'),trySel('#serialNumber'),
   trySel('[name="AssetTag"]'),trySel('[name="SerialNumber"]'),trySel('[name="CaseId"]'),trySel('#CaseId'),
@@ -3179,6 +3197,11 @@ function ctShopRequest(payload){
 function ctShopPostEvent(actionType,assetOrCase){
  const id=ctShopScrapeIdentity();
  const asset=ctShopAssetHint(assetOrCase);
+ if((actionType==='fixed'||actionType==='qc'||actionType==='qcfailed')&&!asset){
+  ctShopLastMsg='No repair id on this page, so this click was not counted.';
+  ctShopRefreshOpenPanel();
+  return Promise.resolve({ok:true,skipped:true});
+ }
  const minute=ctShopMinuteKey();
  const eventId=ctShopHashId([id.techId,actionType,asset,minute]);
  if(ctShopSeenId(eventId))return Promise.resolve({ok:true,duplicate:true,stats:ctShopLastStats});
@@ -3196,7 +3219,7 @@ function ctShopPostEvent(actionType,assetOrCase){
  };
  return ctShopRequest(payload).then(data=>{
   if(data.stats)ctShopLastStats=data.stats;
-  ctShopLastMsg=data.duplicate?'Already counted for this change.':`Logged ${actionType}.`;
+  ctShopLastMsg=data.duplicate?(data.reason==='qc-required'?'Already counted. QC fail opens another Fixed credit.':data.reason==='repeat-pass'?'Already counted this pass.':data.reason==='repeat-fail'?'Already counted this fail.':'Already counted.'):`Logged ${actionType}.`;
   ctShopRefreshOpenPanel();
   return data;
  }).catch(err=>{
@@ -3221,6 +3244,7 @@ function ctShopLoadBoard(dayKey,workshop){
 
 function ctShopNormalizeActionText(t){
  t=String(t||'').replace(/\s+/g,' ').trim().toLowerCase();
+ if(t==='qc failed'||t==='qc fail'||(t.length<=40&&/\bqc\s*fail(ed)?\b/.test(t)))return 'qcfailed';
  if(t==='fixed'||t==='fix')return 'fixed';
  if(t==='working'||t==='work')return 'working';
  return '';
@@ -3271,7 +3295,8 @@ function ctShopHandleRg4Network(url,method,reqBody,status){
    const path=location.pathname.match(/\/case-details\/([^/]+)/i);
    if(path)wo=path[1];
   }
-  ctShopPostEvent('fixed',wo||'rg4-mark-as-fixed').catch(()=>{});
+  if(!wo)return;
+  ctShopPostEvent('fixed',wo).catch(()=>{});
  }
 }
 function ctShopPageWindow(){
@@ -3346,9 +3371,9 @@ function ctShopRefreshOpenPanel(){
  const w=document.getElementById(CT_TOOL.workspace);
  if(!w)return;
  const active=w.querySelector('[data-tab].active')?.dataset.tab;
- if(active!=='shopscore')return;
- const box=w.querySelector('#ct_tools_content');
- if(box)ctRenderShopScoreTool(box);
+ if(active!=='techtally')return;
+ const live=w.querySelector('#ct_tally_live');
+ if(live)ctRenderTallyLive(live);
 }
 
 function ctRenderShopScoreTool(c){
@@ -3416,7 +3441,7 @@ function ctRenderShopScoreLead(c,title,id,day,lame){
   <div id="ct_shop_msg" class="ctw-status" style="margin-top:10px"></div></div>`;
   const go=()=>{
    const v=String(c.querySelector('#ct_shop_pin_try')?.value||'');
-   if(v===pin){ctShopSetLeadUnlocked(true);ctRenderShopScoreTool(c)}
+   if(v===pin){ctShopSetLeadUnlocked(true);ctRenderShopScoreLead(c,title,id,day,lame)}
    else{const m=c.querySelector('#ct_shop_msg');if(m)m.textContent='Incorrect PIN'}
   };
   c.querySelector('#ct_shop_pin_go').onclick=go;
@@ -3425,18 +3450,13 @@ function ctRenderShopScoreLead(c,title,id,day,lame){
  }
  const board=ctShopLastBoard;
  const selectedDay=board?.dayKey||day;
- const workshops=[''].concat((board?.workshops||[]).map(w=>w.workshop).filter(Boolean));
- const uniq=[...new Set(workshops)];
- const filterVal=c._ctShopWorkshop||'';
- let rows=(board?.techs||[]);
- if(filterVal)rows=rows.filter(t=>String(t.workshop||'')===filterVal);
- const body=rows.length?rows.map(t=>`<tr><td>${esc(t.workshop)}</td><td>${esc(t.techName)}</td><td style="text-align:right">${t.fixed|0}</td><td style="text-align:right">${t.working|0}</td><td style="text-align:right">${(t.fixed|0)+(t.working|0)}</td></tr>`).join(''):`<tr><td colspan="5" style="opacity:.7">No rows yet for this day.</td></tr>`;
- const totals=board?.totals||{fixed:0,working:0,techs:0};
- c.innerHTML=`<div class="ctw-card"><h2>${title} — Lead</h2>
- <div style="font-size:13px;color:#555;margin-bottom:10px">${lame?'All techs for the selected day, grouped by workshop.':'Lead board — every tech’s Fixed & Working by workshop.'}</div>
+ const rows=board?.techs||[];
+ const rowTotal=t=>(t.fixed|0)+(t.working|0)+(t.qc|0);
+ const body=rows.length?rows.map(t=>`<tr><td>${esc(t.techName)}</td><td style="text-align:right">${t.fixed|0}</td><td style="text-align:right">${t.working|0}</td><td style="text-align:right">${t.qc|0}</td><td style="text-align:right">${rowTotal(t)}</td></tr>`).join(''):`<tr><td colspan="5" style="opacity:.7">No rows yet for this day.</td></tr>`;
+ const totals=board?.totals||{fixed:0,working:0,qc:0,techs:0};
+ c.innerHTML=`<div class="ctw-card"><h2>${title}</h2>
  <div class="ctw-grid">
   <div><label>Day</label><input id="ct_shop_day" type="date" value="${esc(selectedDay)}" style="width:100%"></div>
-  <div><label>Workshop</label><select id="ct_shop_workshop" style="width:100%"><option value="">All workshops</option>${uniq.filter(Boolean).map(w=>`<option value="${esc(w)}" ${w===filterVal?'selected':''}>${esc(w)}</option>`).join('')}</select></div>
  </div>
  <div class="ctw-actions" style="margin-top:12px">
   <button type="button" id="ct_shop_refresh" class="go">${esc(ctActionLabel('LOAD BOARD','REFRESH BOARD'))}</button>
@@ -3444,25 +3464,21 @@ function ctRenderShopScoreLead(c,title,id,day,lame){
  </div>
  <div style="margin-top:12px;overflow:auto">
   <table style="width:100%;border-collapse:collapse;font-size:13px">
-   <thead><tr style="text-align:left;border-bottom:2px solid #ccc"><th>Workshop</th><th>Tech</th><th style="text-align:right">Fixed</th><th style="text-align:right">Working</th><th style="text-align:right">Total</th></tr></thead>
+   <thead><tr style="text-align:left;border-bottom:2px solid #ccc"><th>Tech Name</th><th style="text-align:right">Fixed</th><th style="text-align:right">Working</th><th style="text-align:right">QC</th><th style="text-align:right">Total</th></tr></thead>
    <tbody>${body}</tbody>
-   <tfoot><tr style="border-top:2px solid #ccc;font-weight:700"><td colspan="2">Totals (${totals.techs|0} techs)</td><td style="text-align:right">${totals.fixed|0}</td><td style="text-align:right">${totals.working|0}</td><td style="text-align:right">${(totals.fixed|0)+(totals.working|0)}</td></tr></tfoot>
+   <tfoot><tr style="border-top:2px solid #ccc;font-weight:700"><td>Total</td><td style="text-align:right">${totals.fixed|0}</td><td style="text-align:right">${totals.working|0}</td><td style="text-align:right">${totals.qc|0}</td><td style="text-align:right">${(totals.fixed|0)+(totals.working|0)+(totals.qc|0)}</td></tr></tfoot>
   </table>
  </div>
  <div id="ct_shop_msg" class="ctw-status" style="margin-top:10px">${esc(ctShopLastMsg||'')}</div>
  </div>`;
- c._ctShopWorkshop=filterVal;
  const setMsg=t=>{const m=c.querySelector('#ct_shop_msg');if(m)m.textContent=t};
  const load=()=>{
   const d=c.querySelector('#ct_shop_day')?.value||day;
-  const w=c.querySelector('#ct_shop_workshop')?.value||'';
-  c._ctShopWorkshop=w;
   setMsg('Loading board…');
-  ctShopLoadBoard(d,w).then(()=>{ctShopLastMsg=`Board ${d}`;ctRenderShopScoreTool(c)}).catch(err=>setMsg(String(err.message||err)));
+  ctShopLoadBoard(d,'').then(()=>{ctShopLastMsg=`Board ${d}`;ctRenderShopScoreLead(c,title,id,day,lame)}).catch(err=>setMsg(String(err.message||err)));
  };
  c.querySelector('#ct_shop_refresh').onclick=load;
- c.querySelector('#ct_shop_workshop').onchange=()=>{c._ctShopWorkshop=c.querySelector('#ct_shop_workshop').value;ctRenderShopScoreTool(c)};
- c.querySelector('#ct_shop_lock').onclick=()=>{ctShopSetLeadUnlocked(false);ctRenderShopScoreTool(c)};
+ c.querySelector('#ct_shop_lock').onclick=()=>{ctShopSetLeadUnlocked(false);ctRenderShopScoreLead(c,title,id,day,lame)};
  if(!board)load();
 }
 
@@ -3817,6 +3833,26 @@ function ctWarrantyScan(){
  if(ctWarrantyOowOn()&&ctWarrantyOut())ctWarrantyShow('This device is out of warranty.',info);
 }
 document.addEventListener('click',e=>{ctRaveArmSidebarNav(e);if(e.target.closest('#ct_tools_workspace button,.rgbp button'))ctUnlockAudio()},true);
-function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();ctInitSearchLayout();ctWarrantyScan();setTimeout(ctWarrantyScan,1000);setInterval(ctRefreshToolWorkspace,1000);try{if(sessionStorage.getItem(P+'update_reopen')==='1'){sessionStorage.removeItem(P+'update_reopen');setTimeout(()=>ctOpenWorkspace('settings'),500)}}catch(_){}}
+function ctQcFormAction(el){
+ if(!el||!el.closest)return null;
+ const btn=(el.id==='passbut'||el.id==='failbut')?el:el.closest('#passbut,#failbut');
+ if(!btn||!btn.closest('#qcform'))return null;
+ const repairId=String(document.querySelector('#qcform [name="id"]')?.value||'').trim();
+ if(btn.id==='passbut')return {action:'qc',repairId};
+ if(btn.id==='failbut')return {action:'qcfailed',repairId};
+ return null;
+}
+function ctInitQcCapture(){
+ if(!ctTopWindow()||window.__ctQcCaptureBound)return;
+ window.__ctQcCaptureBound=true;
+ document.addEventListener('click',e=>{
+  const hit=e.target?.closest?.('#passbut,#failbut');
+  if(!hit)return;
+  const qc=ctQcFormAction(hit);
+  if(!qc)return;
+  ctShopPostEvent(qc.action,qc.repairId).catch(()=>{});
+ },true);
+}
+function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();ctInitSearchLayout();ctInitQcCapture();ctWarrantyScan();setTimeout(ctWarrantyScan,1000);setInterval(ctRefreshToolWorkspace,1000);try{if(sessionStorage.getItem(P+'update_reopen')==='1'){sessionStorage.removeItem(P+'update_reopen');setTimeout(()=>ctOpenWorkspace('settings'),500)}}catch(_){}}
 ctInit();
 })();
