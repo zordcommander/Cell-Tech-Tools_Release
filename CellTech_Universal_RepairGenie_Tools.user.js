@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.49
+// @version      2.31.50
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Battle Tally, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -847,7 +847,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.49'}catch(_){return'2.31.49'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.50'}catch(_){return'2.31.50'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -2998,6 +2998,7 @@ function ctRenderSettings(c){
  <div><label><input id="ct_tools_sound" type="checkbox" ${localStorage.getItem(P+'sound')==='0'?'':'checked'} ${lame?'disabled':''}> Sounds</label><button id="ct_tools_test_sound" type="button" style="margin-top:7px" ${lame?'disabled':''}>TEST SOUND</button></div>
  <div>${themeControl()}<div style="margin-top:10px"><label><input id="ct_tools_rave_reduce" type="checkbox" ${localStorage.getItem(CT_RAVE_REDUCE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Reduce Motion (Eternia After Dark)</label><label><input id="ct_tools_rave_strobe" type="checkbox" ${localStorage.getItem(CT_RAVE_STROBE_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Color Strobe — stepped color jumps, no white flashes</label><label style="margin-top:8px">Rave Speed: <b id="ct_tools_rave_speed_label">${ctRaveSpeedLabel()}</b><input id="ct_tools_rave_speed" type="range" min="1" max="7" step="1" value="${ctRaveSpeed()}" style="width:100%;margin-top:5px" ${lame?'disabled':''}><small style="display:flex;justify-content:space-between"><span>Slow</span><span>Maximum</span></small></label><label><input id="ct_tools_rave_quiet" type="checkbox" ${localStorage.getItem(CT_RAVE_QUIET_KEY)==='1'?'checked':''} ${lame?'disabled':''}> Quiet Mode — no rave tab beat</label></div></div>
  <div><label>Processing Speed</label><select id="ct_tools_speed"><option value="safe">Safe — full verification</option><option value="fast">Fast — cached forms + smart verification</option><option value="turbo">Turbo — up to 3 devices at once</option></select></div>
+ <div><label><input id="ct_warranty_oow" type="checkbox" ${ctWarrantyOowOn()?'checked':''}> Warn when a device is out of warranty</label><div class="ctw-status" style="margin-top:8px">Saved for this RepairGenie site. The notice for a warranty ending within 7 days still shows.</div></div>
  ${ctSettingsUpdateCard()}
  </div><div class="ctw-status"><b>Browser:</b> ${esc(ctBrowserName())}. Compatibility target: current Chrome, Edge, Firefox, and Brave with Tampermonkey. <b>Lame Mode:</b> presentation-only, shared across all RepairGenie sites; processing behavior does not change. <b>Safe:</b> sequential with API verification. <b>Fast:</b> sequential, caches forms/tokens and trusts explicit RepairGenie success responses. <b>Turbo:</b> same optimizations plus up to 3 concurrent devices. Days in Shop and saved table layouts remain active in either mode.</div></div>`;
  c.querySelector('#ct_tools_lame_settings').onclick=()=>ctSetLameMode(!ctLameMode());
@@ -3009,6 +3010,7 @@ function ctRenderSettings(c){
  const rs=c.querySelector('#ct_tools_rave_strobe');rs.onchange=e=>{if(e.target.checked){const ok=confirm('⚠️ FLASHING COLOR WARNING\n\nColor Strobe uses abrupt full-background color changes. Even though it is intentionally slow and never flashes white, it may still cause discomfort for people sensitive to flashing or rapidly changing visuals.\n\nEnable Color Strobe?');if(!ok){e.target.checked=false;return}}localStorage.setItem(CT_RAVE_STROBE_KEY,e.target.checked?'1':'0');ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};
  const rv=c.querySelector('#ct_tools_rave_speed'),rvl=c.querySelector('#ct_tools_rave_speed_label');rv.oninput=e=>{const n=Math.max(1,Math.min(7,Number(e.target.value)||4));localStorage.setItem(CT_RAVE_SPEED_KEY,String(n));if(rvl)rvl.textContent=ctRaveSpeedLabel(n);ctApplySiteTheme();ctApplyWorkspaceTheme();applyTheme(document.getElementById('ct_parts_panel'))};
  const rq=c.querySelector('#ct_tools_rave_quiet');rq.onchange=e=>localStorage.setItem(CT_RAVE_QUIET_KEY,e.target.checked?'1':'0');
+ const oow=c.querySelector('#ct_warranty_oow');if(oow)oow.onchange=e=>localStorage.setItem(P+'warranty_oow',e.target.checked?'1':'0');
  ctBindUpdater(c)
 }
 function ctRefreshToolWorkspace(){
@@ -3763,6 +3765,7 @@ function ctUpdateDays(){
 }
 function ctInitDays(){setTimeout(ctUpdateDays,500);setTimeout(ctUpdateDays,1500);setTimeout(ctUpdateDays,3000);if(ctDayObs)return;ctDayObs=new MutationObserver(()=>{clearTimeout(ctDayTimer);ctDayTimer=setTimeout(ctUpdateDays,300)});ctDayObs.observe(document.body,{childList:true,subtree:true})}
 let ctWarrantyClosed=false;
+function ctWarrantyOowOn(){return localStorage.getItem(P+'warranty_oow')!=='0'}
 function ctWarrantyDaysUntil(key){
  const m=String(key||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
  if(!m)return null;
@@ -3782,19 +3785,36 @@ function ctWarrantyCurrent(){
  }
  return null;
 }
-function ctWarrantyScan(){
- if(ctWarrantyClosed||document.getElementById('ct_warranty_notice'))return;
+function ctWarrantyOut(){
+ const alertText=String(document.querySelector('.panel-heading .alert')?.textContent||'').replace(/\s+/g,' ').trim();
+ const hasRows=[...document.querySelectorAll('tr')].some(row=>/End Date/i.test(row.textContent||''));
+ if(!alertText&&!hasRows)return false;
+ if(/not in warranty|out of warranty/i.test(alertText))return true;
+ if(/in warranty/i.test(alertText))return false;
  const info=ctWarrantyCurrent();
- if(!info)return;
+ if(!info)return hasRows;
  const days=ctWarrantyDaysUntil(info.end);
- if(days==null||days<0||days>7)return;
- const when=days===0?'today':days===1?'in 1 day':'in '+days+' days';
+ return days!=null&&days<0;
+}
+function ctWarrantyShow(lead,info){
  const box=document.createElement('div');
  box.id='ct_warranty_notice';
  box.setAttribute('style','position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99980;max-width:560px;width:calc(100% - 32px);background:#fff8e8;color:#333;border:1px solid #e0b44a;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.16);padding:14px 16px;font:14px/1.4 system-ui,Segoe UI,sans-serif;display:flex;gap:12px;align-items:flex-start;justify-content:space-between');
- box.innerHTML=`<div><b>Warranty ends ${when}.</b> ${esc(info.name)}${info.name?' · ':''}${esc(info.end)}</div><button type="button" style="border:0;background:#333;color:#fff;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:700">Close</button>`;
+ const extra=info&&(info.name||info.end)?` ${esc(info.name||'')}${info.name&&info.end?' · ':''}${esc(info.end||'')}`:'';
+ box.innerHTML=`<div><b>${esc(lead)}</b>${extra}</div><button type="button" style="border:0;background:#333;color:#fff;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:700">Close</button>`;
  box.querySelector('button').onclick=()=>{ctWarrantyClosed=true;box.remove()};
  document.body.appendChild(box);
+}
+function ctWarrantyScan(){
+ if(ctWarrantyClosed||document.getElementById('ct_warranty_notice'))return;
+ const info=ctWarrantyCurrent();
+ const days=info?ctWarrantyDaysUntil(info.end):null;
+ if(days!=null&&days>=0&&days<=7){
+  const when=days===0?'today':days===1?'in 1 day':'in '+days+' days';
+  ctWarrantyShow('Warranty ends '+when+'.',info);
+  return;
+ }
+ if(ctWarrantyOowOn()&&ctWarrantyOut())ctWarrantyShow('This device is out of warranty.',info);
 }
 document.addEventListener('click',e=>{ctRaveArmSidebarNav(e);if(e.target.closest('#ct_tools_workspace button,.rgbp button'))ctUnlockAudio()},true);
 function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();ctInitSearchLayout();ctWarrantyScan();setTimeout(ctWarrantyScan,1000);setInterval(ctRefreshToolWorkspace,1000);try{if(sessionStorage.getItem(P+'update_reopen')==='1'){sessionStorage.removeItem(P+'update_reopen');setTimeout(()=>ctOpenWorkspace('settings'),500)}}catch(_){}}
