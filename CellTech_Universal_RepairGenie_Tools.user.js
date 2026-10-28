@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.55
+// @version      2.31.57
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Battle Tally, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -842,12 +842,11 @@ function ctRaveTabSound(){if(getTheme()!=='rave'||ctRaveQuiet()||localStorage.ge
 function ctRaveArmSidebarNav(e){if(getTheme()!=='rave'||ctRaveQuiet()||localStorage.getItem(P+'sound')==='0'||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;const a=e.target.closest('#side-menu a,.navbar-static-side a,.sidebar-nav a,.sidebar a');if(!a||a.closest('#'+CT_TOOL.menu)||!a.href||a.getAttribute('href')==='#'||/^javascript:/i.test(a.getAttribute('href')||''))return;try{const u=new URL(a.href,location.href);if(u.origin!==location.origin)return;sessionStorage.setItem(CT_RAVE_NAV_KEY,String(Date.now()))}catch(_){}}
 function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localStorage.getItem(P+'sound')==='0')return;let t=0;try{t=Number(sessionStorage.getItem(CT_RAVE_NAV_KEY)||0);sessionStorage.removeItem(CT_RAVE_NAV_KEY)}catch(_){}if(t&&Date.now()-t<15000)setTimeout(ctRaveTabSound,180)}
 
-
 // ============================================================================
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.55'}catch(_){return'2.31.55'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.57'}catch(_){return'2.31.57'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -1074,8 +1073,6 @@ function ctDownloadPartsResults(){const r=ctResults();if(!r.length)return alert(
 async function ctLiveDropdowns(){let dev=ctFindField('Device Code'),per=ctFindField('Peripheral');if(dev)return{devices:ctOptions(dev),peripherals:ctOptions(per)};const r=await fetch(ctRouteUrl('/addpart'),{credentials:'include',cache:'no-store'});if(!r.ok)throw Error('RepairGenie returned HTTP '+r.status);const d=new DOMParser().parseFromString(await r.text(),'text/html');return{devices:ctOptions(ctFindField('Device Code',d)),peripherals:ctOptions(ctFindField('Peripheral',d))}}
 function ctOptions(s){return s?.options?[...new Set([...s.options].map(o=>(o.textContent||'').trim()).filter(t=>t&&!/^--.*select/i.test(t)))]:[]}
 async function ctDownloadTemplate(){try{const {devices,peripherals}=await ctLiveDropdowns(),descriptions=['Top Cover','Hinges','IO Board','Base Cover','Palmrest','Keyboard','Bezel','LCD','LCD Cable','LCD Tape','Camera','Speakers','Systemboard','Battery','Wifi Card','Wifi Antenna'],wb=new ExcelJS.Workbook(),up=wb.addWorksheet('Bulk Parts Upload',{views:[{state:'frozen',ySplit:1}]});up.columns=[['Device Code',26],['Peripheral',24],['Part #',22],['Description',35],['Price',14],['ADW Detail',38],['CLW Detail',38]].map(([header,width])=>({header,width}));up.getRow(1).font={bold:true};const li=wb.addWorksheet('Lists');li.getCell('A1').value='Device Codes';li.getCell('B1').value='Peripherals';li.getCell('C1').value='Descriptions';devices.forEach((v,i)=>li.getCell('A'+(i+2)).value=v);peripherals.forEach((v,i)=>li.getCell('B'+(i+2)).value=v);descriptions.forEach((v,i)=>li.getCell('C'+(i+2)).value=v);li.state='veryHidden';for(let r=2;r<=1000;r++){if(devices.length)up.getCell('A'+r).dataValidation={type:'list',allowBlank:false,formulae:[`'Lists'!$A$2:$A${devices.length+1}`]};if(peripherals.length)up.getCell('B'+r).dataValidation={type:'list',allowBlank:true,formulae:[`'Lists'!$B$2:$B${peripherals.length+1}`]};up.getCell('D'+r).dataValidation={type:'list',allowBlank:false,formulae:[`'Lists'!$C$2:$C${descriptions.length+1}`]};up.getCell('E'+r).numFmt='$0.00'}const ins=wb.addWorksheet('Instructions');ins.columns=[{header:'Field',width:22},{header:'Required?',width:15},{header:'Description',width:70},{header:'Example',width:28}];ins.getRow(1).font={bold:true};[['Device Code','Yes','Select a live RepairGenie Device Code.',devices[0]||''],['Peripheral','No','Select only when required.',peripherals[0]||''],['Part #','Yes','Enter the part number.','01AX768'],['Description','Yes','Enter the part description.','WiFi Card'],['Price','No','Blank values upload as 0.','15'],['ADW Detail','No','Optional.',''],['CLW Detail','No','Optional.','']].forEach(x=>ins.addRow(x));ins.addRow([]);ins.addRow(['IMPORTANT']);ins.getRow(ins.rowCount).font={bold:true};['Do not rename Bulk Parts Upload headers.','Each row is one RepairGenie part.','Peripheral, ADW Detail, and CLW Detail are optional.','Download a fresh template when RepairGenie dropdowns change.'].forEach(x=>ins.addRow([x]));const buf=await wb.xlsx.writeBuffer(),blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});ctSaveBlob(blob,'RepairGenie_Bulk_Parts_Template.xlsx')}catch(e){alert('Could not create template.\n\n'+e.message)}}
-
-
 
 // ============================================================================
 // REWIND THE BATTLE (WORKSHOP REWIND CASE)
@@ -2533,7 +2530,6 @@ function ctRenderResetTool(c){
  stop.onclick=()=>{ctResetStop=true;st.textContent='Stop requested. The current case will finish, then bulk processing will stop.'};c.querySelector('#ct_tools_reset_report').onclick=ctResetModal;can();
 }
 
-
 // ============================================================================
 // RELEASE THE MINIONS - Approved Non-Warranty Remove Hold processor
 // Uses the current school site's /nowarrenty list and approved case detail form.
@@ -3041,32 +3037,18 @@ function ctHandleToolEvent(ev){if(ev?.type!=='finished')return;setTimeout(ctRefr
 chan?.addEventListener('message',e=>ctHandleToolEvent(e.data||{}));window.addEventListener('storage',e=>{if(e.key===P+'event'&&e.newValue)try{ctHandleToolEvent(JSON.parse(e.newValue))}catch(_){}});
 
 // ============================================================================
-// === SHOP SCORE ===
-// Fixed / Working click counters via shared Google Sheet (Apps Script).
-// Tech: personal today counts. Lead: all techs by workshop (PIN in Settings).
+// === ACTION PLAY BY PLAY ===
+// Live board for the signed-in admin's roster location. QC Pass/Fail posts from this tool.
 const CT_SHOP_ENDPOINT_KEY='ct_shop_endpoint';
-const CT_SHOP_MODE_KEY='ct_shop_mode';
-const CT_SHOP_PIN_KEY='ct_shop_lead_pin';
 const CT_SHOP_NAME_KEY='ct_shop_name_override';
-const CT_SHOP_TRACK_KEY='ct_shop_track';
-const CT_SHOP_UNLOCK_KEY='ct_shop_lead_unlocked';
 const CT_SHOP_RECENT_KEY='ct_shop_recent_ids';
-let ctShopLastStats=null,ctShopLastBoard=null,ctShopLastMsg='',ctShopPollTimer=null;
+const CT_SHOP_QUEUE_KEY='ct_shop_outbox';
+let ctShopLastStats=null,ctShopLastBoard=null,ctShopLastMsg='',ctShopFlushing=false;
 
 const CT_SHOP_OLD_ENDPOINT='https://script.google.com/macros/s/AKfycbxau02Xhut6-V53_8SVAbHDNOqpEVyh8mDyjWo_ZN3KUEOefkM178YgEL_lFVbZUotD1Q/exec';
 const CT_SHOP_DEFAULT_ENDPOINT='https://script.google.com/macros/s/AKfycbyB2BNy-3JFWHYTzV4VQzXcUOlhaW64Mi4AB55MmdFt1BMDOxEUM4o_lo0nzmZBE4K2sQ/exec';
 function ctShopEndpoint(){try{const saved=String((typeof GM_getValue==='function'?GM_getValue(CT_SHOP_ENDPOINT_KEY,''):'')||localStorage.getItem(CT_SHOP_ENDPOINT_KEY)||'').trim();return (!saved||saved===CT_SHOP_OLD_ENDPOINT)?CT_SHOP_DEFAULT_ENDPOINT:saved}catch(_){const saved=String(localStorage.getItem(CT_SHOP_ENDPOINT_KEY)||'').trim();return (!saved||saved===CT_SHOP_OLD_ENDPOINT)?CT_SHOP_DEFAULT_ENDPOINT:saved}}
-function ctShopSetEndpoint(v){v=String(v||'').trim();try{if(typeof GM_setValue==='function')GM_setValue(CT_SHOP_ENDPOINT_KEY,v)}catch(_){}localStorage.setItem(CT_SHOP_ENDPOINT_KEY,v)}
-function ctShopMode(){const m=String(localStorage.getItem(CT_SHOP_MODE_KEY)||'lead').toLowerCase();return m==='tech'?'tech':'lead'}
-function ctShopSetMode(m){localStorage.setItem(CT_SHOP_MODE_KEY,m==='lead'?'lead':'tech')}
-function ctShopPin(){return String(localStorage.getItem(CT_SHOP_PIN_KEY)||'').trim()}
-function ctShopSetPin(v){localStorage.setItem(CT_SHOP_PIN_KEY,String(v||'').trim())}
 function ctShopNameOverride(){return String(localStorage.getItem(CT_SHOP_NAME_KEY)||'').trim()}
-function ctShopSetNameOverride(v){localStorage.setItem(CT_SHOP_NAME_KEY,String(v||'').trim())}
-function ctShopTrackOn(){return localStorage.getItem(CT_SHOP_TRACK_KEY)!=='0'}
-function ctShopSetTrack(on){localStorage.setItem(CT_SHOP_TRACK_KEY,on?'1':'0')}
-function ctShopLeadUnlocked(){try{return sessionStorage.getItem(CT_SHOP_UNLOCK_KEY)==='1'}catch(_){return false}}
-function ctShopSetLeadUnlocked(on){try{sessionStorage.setItem(CT_SHOP_UNLOCK_KEY,on?'1':'0')}catch(_){}}
 
 function ctShopDayKey(d=new Date()){
  try{
@@ -3188,7 +3170,7 @@ function ctShopSeenId(id){return ctShopRecentIds().includes(id)}
 
 function ctShopRequest(payload){
  const url=ctShopEndpoint();
- if(!url)return Promise.reject(Error('Shop Score endpoint not set. Open Settings → Shop Score and paste the Apps Script web app URL.'));
+ if(!url)return Promise.reject(Error('Sheet link is missing.'));
  if(!CT_GM_XHR)return Promise.reject(Error('GM_xmlhttpRequest unavailable'));
  const body=JSON.stringify(payload||{});
  return new Promise((resolve,reject)=>{
@@ -3198,7 +3180,6 @@ function ctShopRequest(payload){
    data:body,
    headers:{'Content-Type':'application/json'},
    timeout:20000,
-   anonymous:true,
    onload:r=>{
     const text=String(r.responseText||'').trim();
     let data=null;
@@ -3207,16 +3188,30 @@ function ctShopRequest(payload){
      const m=text.match(/\{[\s\S]*\}\s*$/);
      if(m){try{data=JSON.parse(m[0])}catch(__){}}
     }
-    if(!data)return reject(Error('Shop Score: bad response (HTTP '+r.status+')'));
-    if(data.ok===false)return reject(Error(data.error||'Shop Score request failed'));
+    if(!data)return reject(Error('Bad response (HTTP '+r.status+')'));
+    if(data.ok===false)return reject(Error(data.error||'Request failed'));
     resolve(data);
    },
-   onerror:()=>reject(Error('Shop Score: could not reach the Sheet endpoint')),
-   ontimeout:()=>reject(Error('Shop Score: request timed out'))
+   onerror:()=>reject(Error('Could not reach the sheet')),
+   ontimeout:()=>reject(Error('Sheet request timed out'))
   });
  });
 }
 
+function ctShopReadQueue(){try{return JSON.parse(localStorage.getItem(CT_SHOP_QUEUE_KEY)||'[]')}catch(_){return[]}}
+function ctShopWriteQueue(list){localStorage.setItem(CT_SHOP_QUEUE_KEY,JSON.stringify(list.slice(-40)))}
+function ctShopEnqueue(payload){
+ const list=ctShopReadQueue().filter(item=>item.eventId!==payload.eventId);
+ list.push(payload);
+ ctShopWriteQueue(list);
+}
+function ctShopDequeue(eventId){ctShopWriteQueue(ctShopReadQueue().filter(item=>item.eventId!==eventId))}
+function ctShopDuplicateMessage(reason){
+ if(reason==='qc-required')return'Already counted. QC fail opens another Fixed credit.';
+ if(reason==='repeat-pass')return'Already counted this pass.';
+ if(reason==='repeat-fail')return'Already counted this fail.';
+ return'Already counted.';
+}
 function ctShopPostEvent(actionType,assetOrCase){
  const id=ctShopScrapeIdentity();
  const asset=ctShopAssetHint(assetOrCase);
@@ -3225,11 +3220,10 @@ function ctShopPostEvent(actionType,assetOrCase){
   ctShopRefreshOpenPanel();
   return Promise.resolve({ok:true,skipped:true});
  }
- const minute=ctShopMinuteKey();
- const eventId=ctShopHashId([id.techId,actionType,asset,minute]);
+ const eventId=ctShopHashId([id.techId,actionType,asset,ctShopMinuteKey()]);
  if(ctShopSeenId(eventId))return Promise.resolve({ok:true,duplicate:true,stats:ctShopLastStats});
  ctShopRememberId(eventId);
- const payload={
+ ctShopEnqueue({
   action:'postEvent',
   eventId,
   techId:id.techId,
@@ -3239,26 +3233,33 @@ function ctShopPostEvent(actionType,assetOrCase){
   assetOrCase:asset,
   tsIso:new Date().toISOString(),
   dayKey:ctShopDayKey()
- };
- return ctShopRequest(payload).then(data=>{
+ });
+ ctShopLastMsg='Saving '+actionType+'…';
+ ctShopFlushQueue();
+ return Promise.resolve({ok:true,queued:true});
+}
+function ctShopFlushQueue(){
+ if(ctShopFlushing)return;
+ const list=ctShopReadQueue();
+ if(!list.length)return;
+ ctShopFlushing=true;
+ const next=list[0];
+ ctShopRequest(next).then(data=>{
+  if(next.action==='postEvent'&&!data.eventId&&!data.stats)throw Error('Sheet did not save this click');
+  ctShopDequeue(next.eventId);
   if(data.stats)ctShopLastStats=data.stats;
-  ctShopLastMsg=data.duplicate?(data.reason==='qc-required'?'Already counted. QC fail opens another Fixed credit.':data.reason==='repeat-pass'?'Already counted this pass.':data.reason==='repeat-fail'?'Already counted this fail.':'Already counted.'):`Logged ${actionType}.`;
-  ctShopRefreshOpenPanel();
-  return data;
+  ctShopLastMsg=data.duplicate?ctShopDuplicateMessage(data.reason):`Logged ${next.actionType}.`;
+  try{ctShopRefreshOpenPanel()}catch(_){}
+  ctShopFlushing=false;
+  ctShopFlushQueue();
  }).catch(err=>{
   ctShopLastMsg=String(err.message||err);
-  ctShopRefreshOpenPanel();
-  throw err;
+  try{ctShopRefreshOpenPanel()}catch(_){}
+  ctShopFlushing=false;
+  setTimeout(ctShopFlushQueue,5000);
  });
 }
 
-function ctShopLoadMyStats(){
- const id=ctShopScrapeIdentity();
- return ctShopRequest({action:'getMyStats',techId:id.techId,techName:id.techName,dayKey:ctShopDayKey()}).then(data=>{
-  ctShopLastStats=data.stats||{fixed:0,working:0,total:0};
-  return data;
- });
-}
 function ctShopLeadWorkshop(){
  const id=ctShopScrapeIdentity();
  return ctShopRequest({action:'getMyStats',techId:id.techId,techName:id.techName,dayKey:ctShopDayKey()}).then(data=>String(data.workshop||'').trim());
@@ -3267,131 +3268,6 @@ function ctShopLoadBoard(dayKey,workshop){
  const payload={action:'getBoard',dayKey:dayKey||ctShopDayKey()};
  if(workshop)payload.workshop=workshop;
  return ctShopRequest(payload).then(data=>{ctShopLastBoard=data;return data});
-}
-
-function ctShopNormalizeActionText(t){
- t=String(t||'').replace(/\s+/g,' ').trim().toLowerCase();
- if(t==='qc failed'||t==='qc fail'||(t.length<=40&&/\bqc\s*fail(ed)?\b/.test(t)))return 'qcfailed';
- if(t==='fixed'||t==='fix')return 'fixed';
- if(t==='working'||t==='work')return 'working';
- return '';
-}
-
-function ctShopActionFromElement(el){
- if(!el||el.nodeType!==1)return '';
- if(el.closest&&(el.closest('#ct_tools_workspace')||el.closest('#ct_tools_menu')||el.closest('#ct_tools_fallback')||el.closest('.ctw-card')))return '';
- const tag=(el.tagName||'').toLowerCase();
- if(tag==='select'){
-  const opt=el.options?.[el.selectedIndex];
-  return ctShopNormalizeActionText(opt?.text||opt?.value||el.value);
- }
- const candidates=[
-  el.getAttribute?.('data-status'),
-  el.getAttribute?.('data-value'),
-  el.getAttribute?.('value'),
-  el.getAttribute?.('title'),
-  el.getAttribute?.('aria-label'),
-  el.textContent
- ];
- for(const c of candidates){
-  const a=ctShopNormalizeActionText(c);
-  if(a)return a;
-  // Buttons often say "Mark Fixed" / "Set Working"
-  const m=String(c||'').match(/\b(fixed|working)\b/i);
-  if(m && String(c).trim().length<=40)return ctShopNormalizeActionText(m[1]);
- }
- return '';
-}
-
-function ctShopIsRg4Host(){
- return /^rgv4/i.test(location.hostname)||/\/workshop\//i.test(location.pathname);
-}
-function ctShopParseMaybeJson(text){
- try{return JSON.parse(text)}catch(_){return null}
-}
-function ctShopHandleRg4Network(url,method,reqBody,status){
- if(!ctShopTrackOn()||!ctShopEndpoint())return;
- if(!(status>=200&&status<300))return;
- const u=String(url||'');
- const m=String(method||'GET').toUpperCase();
- if(m==='PUT'&&/\/repair\/mark-as-fixed(?:\?|$)/i.test(u)){
-  let wo='';
-  const body=typeof reqBody==='string'?ctShopParseMaybeJson(reqBody):reqBody;
-  if(body&&body.work_order_id!=null)wo=String(body.work_order_id);
-  if(!wo){
-   const path=location.pathname.match(/\/case-details\/([^/]+)/i);
-   if(path)wo=path[1];
-  }
-  if(!wo)return;
-  ctShopPostEvent('fixed',wo).catch(()=>{});
- }
-}
-function ctShopPageWindow(){
- try{if(typeof unsafeWindow!=='undefined'&&unsafeWindow)return unsafeWindow}catch(_){}
- return window;
-}
-function ctShopBindRg4NetworkHooks(){
- const host=ctShopPageWindow();
- if(!host||host.__ctShopRg4NetBound)return;
- host.__ctShopRg4NetBound=true;
- const origFetch=host.fetch;
- if(typeof origFetch==='function'){
-  host.fetch=function(input,init){
-   const method=(init&&init.method)||(input&&input.method)||'GET';
-   const url=typeof input==='string'?input:(input&&input.url)||'';
-   const reqBody=init&&init.body;
-   return origFetch.apply(this,arguments).then(res=>{
-    try{ctShopHandleRg4Network(url,method,reqBody,res.status)}catch(_){}
-    return res;
-   });
-  };
- }
- const XHR=host.XMLHttpRequest;
- if(!XHR||!XHR.prototype||XHR.prototype.__ctShopRg4Send)return;
- const XO=XHR.prototype.open,XS=XHR.prototype.send;
- XHR.prototype.open=function(method,url){
-  this.__ctShopMethod=method;
-  this.__ctShopUrl=url;
-  return XO.apply(this,arguments);
- };
- XHR.prototype.send=function(body){
-  this.addEventListener('load',()=>{
-   try{ctShopHandleRg4Network(this.__ctShopUrl,this.__ctShopMethod,body,this.status)}catch(_){}
-  });
-  return XS.apply(this,arguments);
- };
- XHR.prototype.__ctShopRg4Send=true;
-}
-
-function ctShopMaybeCapture(el){
- if(!ctShopTrackOn())return;
- if(!ctShopEndpoint())return;
- if(/workshop\.repairgenie\.net/i.test(location.hostname))return;
- if(ctShopIsRg4Host())return;
- const action=ctShopActionFromElement(el);
- if(!action)return;
- ctShopPostEvent(action).catch(()=>{});
-}
-
-function ctInitShopScore(){
- if(!ctTopWindow())return;
- if(window.__ctShopScoreBound)return;
- window.__ctShopScoreBound=true;
- ctShopBindRg4NetworkHooks();
- document.addEventListener('click',e=>{
-  const t=e.target;
-  if(!t)return;
-  const el=(t.closest&&(t.closest('button,a,input[type="button"],input[type="submit"],.btn,[role="button"],label')))||t;
-  // Defer slightly so the page can complete the status change
-  setTimeout(()=>ctShopMaybeCapture(el),50);
- },true);
- document.addEventListener('change',e=>{
-  const t=e.target;
-  if(!t)return;
-  if((t.tagName||'').toLowerCase()==='select' || /status/i.test(t.name||t.id||'')){
-   setTimeout(()=>ctShopMaybeCapture(t),50);
-  }
- },true);
 }
 
 function ctShopRefreshOpenPanel(){
@@ -3403,78 +3279,7 @@ function ctShopRefreshOpenPanel(){
  if(live)ctRenderTallyLive(live);
 }
 
-function ctRenderShopScoreTool(c){
- const lame=ctLameMode();
- const mode=ctShopMode();
- const id=ctShopScrapeIdentity();
- const endpoint=ctShopEndpoint();
- const day=ctShopDayKey();
- const title=esc(ctToolLabel('shopscore'));
- if(!endpoint){
-  c.innerHTML=`<div class="ctw-card"><h2>${title}</h2><div class="ctw-status">Set the <b>Sheet endpoint</b> in Settings → Shop Score (Apps Script web app URL). See <code>Repair-Genie-Tool/shop-score/SETUP.md</code>.</div><div class="ctw-actions"><button type="button" id="ct_shop_goto_settings">Open Settings</button></div></div>`;
-  c.querySelector('#ct_shop_goto_settings').onclick=()=>ctRenderToolTab('settings');
-  return;
- }
- if(mode==='lead'){
-  ctRenderShopScoreLead(c,title,id,day,lame);
- }else{
-  ctRenderShopScoreTech(c,title,id,day,lame);
- }
-}
-
-function ctRenderShopScoreTech(c,title,id,day,lame){
- const stats=ctShopLastStats||{fixed:0,working:0,total:0};
- c.innerHTML=`<div class="ctw-card"><h2>${title}</h2>
- <div style="font-size:13px;color:#555;margin-bottom:10px">${lame?'Your Fixed / Working counts for today (Eastern).':'Today on the bench — your Fixed & Working tally (Eastern day).'} Tracking is ${ctShopTrackOn()?'on':'off'}.</div>
- <div class="ctw-grid" style="margin-top:8px">
-  <div><label>Tech</label><div class="ctw-status" style="margin-top:4px">${esc(id.techName)} <span style="opacity:.7">(${esc(id.techId)})</span></div></div>
-  <div><label>Day</label><div class="ctw-status" style="margin-top:4px">${esc(day)} · America/New_York</div></div>
- </div>
- <div class="ctw-grid" style="margin-top:14px">
-  <div style="text-align:center;padding:16px;border:1px solid #ddd;border-radius:8px;background:#fafafa"><div style="font-size:12px;font-weight:700;letter-spacing:.04em;color:#666">FIXED</div><div id="ct_shop_fixed" style="font-size:42px;font-weight:800;line-height:1.1;margin-top:6px">${stats.fixed|0}</div></div>
-  <div style="text-align:center;padding:16px;border:1px solid #ddd;border-radius:8px;background:#fafafa"><div style="font-size:12px;font-weight:700;letter-spacing:.04em;color:#666">WORKING</div><div id="ct_shop_working" style="font-size:42px;font-weight:800;line-height:1.1;margin-top:6px">${stats.working|0}</div></div>
- </div>
- <div class="ctw-actions" style="margin-top:14px">
-  <button type="button" id="ct_shop_refresh">${esc(ctActionLabel('REFRESH TALLY','REFRESH'))}</button>
-  <button type="button" id="ct_shop_ping">TEST LINK</button>
- </div>
- <div id="ct_shop_msg" class="ctw-status" style="margin-top:10px">${esc(ctShopLastMsg||(ctShopIsRg4Host()?'RG4: Fixed counts when you use Mark as Fixed.':'Counts update when you set a ticket to Fixed or Working on this site.'))}</div>
- </div>`;
- const setMsg=t=>{const m=c.querySelector('#ct_shop_msg');if(m)m.textContent=t};
- c.querySelector('#ct_shop_refresh').onclick=()=>{
-  setMsg('Loading…');
-  ctShopLoadMyStats().then(data=>{
-   ctShopLastMsg=`Updated ${data.dayKey||day}.`;
-   ctRenderShopScoreTool(c);
-  }).catch(err=>setMsg(String(err.message||err)));
- };
- c.querySelector('#ct_shop_ping').onclick=()=>{
-  setMsg('Pinging…');
-  ctShopRequest({action:'ping'}).then(d=>setMsg(`Link OK · dayKey ${d.dayKey||'?'} · tz ${d.tz||'?'}`)).catch(err=>setMsg(String(err.message||err)));
- };
- // Auto-load once if we have no stats yet
- if(!ctShopLastStats){
-  ctShopLoadMyStats().then(()=>ctRenderShopScoreTool(c)).catch(err=>setMsg(String(err.message||err)));
- }
-}
-
 function ctRenderShopScoreLead(c,title,id,day,lame){
- const pin=ctShopPin();
- if(pin && !ctShopLeadUnlocked()){
-  c.innerHTML=`<div class="ctw-card"><h2>${title}</h2>
-  <div>Lead board is locked. Enter the shared PIN from Settings.</div>
-  <div class="ctw-grid" style="margin-top:12px"><div><label>Lead PIN</label><input id="ct_shop_pin_try" type="password" autocomplete="off" style="width:100%"></div></div>
-  <div class="ctw-actions"><button type="button" id="ct_shop_pin_go" class="go">Unlock</button></div>
-  <div id="ct_shop_msg" class="ctw-status" style="margin-top:10px"></div></div>`;
-  const go=()=>{
-   const v=String(c.querySelector('#ct_shop_pin_try')?.value||'');
-   if(v===pin){ctShopSetLeadUnlocked(true);ctRenderShopScoreLead(c,title,id,day,lame)}
-   else{const m=c.querySelector('#ct_shop_msg');if(m)m.textContent='Incorrect PIN'}
-  };
-  c.querySelector('#ct_shop_pin_go').onclick=go;
-  c.querySelector('#ct_shop_pin_try').onkeydown=e=>{if(e.key==='Enter')go()};
-  return;
- }
  const board=ctShopLastBoard;
  const selectedDay=board?.dayKey||day;
  const rows=board?.techs||[];
@@ -3487,7 +3292,6 @@ function ctRenderShopScoreLead(c,title,id,day,lame){
  </div>
  <div class="ctw-actions" style="margin-top:12px">
   <button type="button" id="ct_shop_refresh" class="go">${esc(ctActionLabel('LOAD BOARD','REFRESH BOARD'))}</button>
-  <button type="button" id="ct_shop_lock">Lock</button>
  </div>
  <div style="margin-top:12px;overflow:auto">
   <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -3513,10 +3317,8 @@ function ctRenderShopScoreLead(c,title,id,day,lame){
   }).catch(err=>setMsg(String(err.message||err)));
  };
  c.querySelector('#ct_shop_refresh').onclick=load;
- c.querySelector('#ct_shop_lock').onclick=()=>{ctShopSetLeadUnlocked(false);ctRenderShopScoreLead(c,title,id,day,lame)};
  if(!board)load();
 }
-
 
 // SEARCH LAYOUT MANAGER - v2.31.17 TEST
 // Purpose-built for RepairGenie's /repairs #reports table.
@@ -3872,21 +3674,97 @@ function ctQcFormAction(el){
  if(!el||!el.closest)return null;
  const btn=(el.id==='passbut'||el.id==='failbut')?el:el.closest('#passbut,#failbut');
  if(!btn||!btn.closest('#qcform'))return null;
- const repairId=String(document.querySelector('#qcform [name="id"]')?.value||'').trim();
- if(btn.id==='passbut')return {action:'qc',repairId};
- if(btn.id==='failbut')return {action:'qcfailed',repairId};
+ if(btn.id==='passbut')return {action:'qc'};
+ if(btn.id==='failbut')return {action:'qcfailed'};
  return null;
+}
+function ctShopButtonAction(el){
+ const btn=el&&el.closest?(el.closest('#fixbut,#workingbut')||el):el;
+ const id=btn&&btn.id;
+ if(id==='fixbut')return'fixed';
+ if(id==='workingbut')return'working';
+ return'';
+}
+function ctShopIsRg4Host(){
+ return /^rgv4/i.test(location.hostname)||/\/workshop\//i.test(location.pathname);
+}
+function ctShopParseMaybeJson(text){try{return JSON.parse(text)}catch(_){return null}}
+function ctShopHandleRg4Network(url,method,reqBody,status){
+ if(!ctShopEndpoint())return;
+ if(!(status>=200&&status<300))return;
+ const u=String(url||'');
+ const m=String(method||'GET').toUpperCase();
+ if(m==='PUT'&&/\/repair\/mark-as-fixed(?:\?|$)/i.test(u)){
+  let wo='';
+  const body=typeof reqBody==='string'?ctShopParseMaybeJson(reqBody):reqBody;
+  if(body&&body.work_order_id!=null)wo=String(body.work_order_id);
+  if(!wo){
+   const path=location.pathname.match(/\/case-details\/([^/]+)/i);
+   if(path)wo=path[1];
+  }
+  if(!wo)return;
+  ctShopPostEvent('fixed',wo).catch(()=>{});
+ }
+}
+function ctShopPageWindow(){
+ try{if(typeof unsafeWindow!=='undefined'&&unsafeWindow)return unsafeWindow}catch(_){}
+ return window;
+}
+function ctShopBindRg4NetworkHooks(){
+ const host=ctShopPageWindow();
+ if(!host||host.__ctShopRg4NetBound)return;
+ host.__ctShopRg4NetBound=true;
+ const origFetch=host.fetch;
+ if(typeof origFetch==='function'){
+  host.fetch=function(input,init){
+   const method=(init&&init.method)||(input&&input.method)||'GET';
+   const url=typeof input==='string'?input:(input&&input.url)||'';
+   const reqBody=init&&init.body;
+   return origFetch.apply(this,arguments).then(res=>{
+    try{ctShopHandleRg4Network(url,method,reqBody,res.status)}catch(_){}
+    return res;
+   });
+  };
+ }
+ const XHR=host.XMLHttpRequest;
+ if(!XHR||!XHR.prototype||XHR.prototype.__ctShopRg4Send)return;
+ const XO=XHR.prototype.open,XS=XHR.prototype.send;
+ XHR.prototype.open=function(method,url){
+  this.__ctShopMethod=method;
+  this.__ctShopUrl=url;
+  return XO.apply(this,arguments);
+ };
+ XHR.prototype.send=function(body){
+  this.addEventListener('load',()=>{
+   try{ctShopHandleRg4Network(this.__ctShopUrl,this.__ctShopMethod,body,this.status)}catch(_){}
+  });
+  return XS.apply(this,arguments);
+ };
+ XHR.prototype.__ctShopRg4Send=true;
+}
+function ctShopMaybeCapture(el){
+ if(!ctShopEndpoint())return;
+ const qc=ctQcFormAction(el);
+ if(qc){
+  ctShopPostEvent(qc.action).catch(()=>{});
+  return;
+ }
+ if(/workshop\.repairgenie\.net/i.test(location.hostname))return;
+ if(ctShopIsRg4Host())return;
+ const action=ctShopButtonAction(el);
+ if(!action)return;
+ ctShopPostEvent(action).catch(()=>{});
 }
 function ctInitQcCapture(){
  if(!ctTopWindow()||window.__ctQcCaptureBound)return;
  window.__ctQcCaptureBound=true;
+ ctShopBindRg4NetworkHooks();
  document.addEventListener('click',e=>{
-  const hit=e.target?.closest?.('#passbut,#failbut');
+  const hit=e.target?.closest?.('#passbut,#failbut,#fixbut,#workingbut');
   if(!hit)return;
-  const qc=ctQcFormAction(hit);
-  if(!qc)return;
-  ctShopPostEvent(qc.action).catch(()=>{});
+  ctShopMaybeCapture(hit);
  },true);
+ ctShopFlushQueue();
 }
 function ctInit(){if(!ctTopWindow())return;ctToolStyles();ctApplySiteTheme();ctInitThemeRecovery();ctAddSideMenu();ctRaveReplaySidebarNav();setTimeout(ctAddSideMenu,1200);setTimeout(ctAddSideMenu,3000);if(ctDaysPage())ctInitDays();ctInitSearchLayout();ctInitQcCapture();ctWarrantyScan();setTimeout(ctWarrantyScan,1000);setInterval(ctRefreshToolWorkspace,1000);try{if(sessionStorage.getItem(P+'update_reopen')==='1'){sessionStorage.removeItem(P+'update_reopen');setTimeout(()=>ctOpenWorkspace('settings'),500)}}catch(_){}}
 ctInit();
