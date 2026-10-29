@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.57
+// @version      2.31.59
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Battle Tally, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -470,8 +470,8 @@ function parseReceive(asset,h){
   const t=txt(a),l=t.toLowerCase();
   if(low&&!l.includes(low)&&!/receiv/i.test(t))continue;
   if(/already\s+receiv/i.test(t)||/already\s+been\s+receiv/i.test(t))return{ok:true,result:'SKIPPED',msg:t,skipped:true,alreadyReceived:true};
-  // Still Delivered / not eligible to receive — report as skipped, not failed.
-  if(/status\s+is\s+delivered\b/i.test(t))return{ok:true,result:'SKIPPED',msg:t,skipped:true,stillDelivered:true};
+  // Still Delivered after a receive attempt — failed (do not treat as success).
+  if(/status\s+is\s+delivered\b/i.test(t))return{ok:false,result:'FAILED',msg:t,stillDelivered:true};
   if(/status\s+is\s+received\b/i.test(t)||/\breceived\b/i.test(t)&&!/not\s+receiv/i.test(t)){
    const already=/already/i.test(t);
    return{ok:true,result:already?'SKIPPED':'RECEIVED',msg:t,skipped:already,alreadyReceived:already||/status\s+is\s+received\b/i.test(t)};
@@ -484,7 +484,7 @@ function parseReceive(asset,h){
  for(const a of alerts){
   const t=txt(a);
   if(low&&t.toLowerCase().includes(low)&&/\breceived\b/i.test(t))return{ok:true,result:'RECEIVED',msg:t};
-  if(/status\s+is\s+delivered\b/i.test(t))return{ok:true,result:'SKIPPED',msg:t,skipped:true,stillDelivered:true};
+  if(/status\s+is\s+delivered\b/i.test(t))return{ok:false,result:'FAILED',msg:t,stillDelivered:true};
  }
  const body=txt(d.body||d);
  if(/already\s+receiv/i.test(body))return{ok:true,result:'SKIPPED',msg:'Page indicates device was already received.',skipped:true,alreadyReceived:true};
@@ -492,30 +492,52 @@ function parseReceive(asset,h){
  if(/receiv(?:ed|ing)?\s+successfully|device\s+marked\s+receiv/i.test(body))return{ok:true,result:'RECEIVED',msg:'Receive confirmation found on page.'};
  return{ok:false,result:'FAILED',msg:'Could not verify Receive result from page response.'};
 }
+function ctReceiveUrlForSch(sch){
+ const s=String(sch||'').trim();
+ if(!s)return'';
+ return ctRouteUrl('/recvschoolsdev?sch='+encodeURIComponent(s));
+}
 function ctParseReceiveSchoolLinks(html,baseUrl){
+ // Inbound Clearer: /receivedevs tbody → first-cell link href with sch=
  const d=doc(html),out=[],seen=new Set();
  const add=(name,href)=>{
   try{
-   const u=new URL(href,baseUrl||location.href);
-   const sch=u.searchParams.get('sch')||'';
-   if(!sch&&!/recv|receiv|schooltechrecv/i.test(u.pathname))return;
-   const label=String(name||decodeURIComponent(String(sch||'').replace(/\+/g,' '))).trim();
-   const key=(sch||u.href).toLowerCase();
-   if(!label||seen.has(key))return;
+   const raw=String(href||'').trim();
+   if(!raw||/^#|^javascript:/i.test(raw))return;
+   const u=new URL(raw,baseUrl||location.href);
+   let sch=u.searchParams.get('sch')||u.searchParams.get('school')||'';
+   try{if(sch)sch=decodeURIComponent(String(sch).replace(/\+/g,' '))}catch(_){sch=String(sch).replace(/\+/g,' ')}
+   const path=(u.pathname||'').toLowerCase();
+   if(!sch&&!/recv|receiv|schooltechrecv|receivedevs/i.test(path))return;
+   const label=String(name||sch||'').replace(/\s+/g,' ').trim();
+   if(!label)return;
+   if(!sch)sch=label;
+   const key=String(sch).toLowerCase();
+   if(seen.has(key))return;
    seen.add(key);
-   out.push({sch:sch||label,name:label,url:u.href});
+   const url=/recvschoolsdev|schooltechrecv|receivedevs|recvschool/i.test(path)||u.searchParams.has('sch')
+    ?u.href
+    :ctReceiveUrlForSch(sch);
+   out.push({sch,name:label,url});
   }catch(_){}
  };
+ // Prefer Clearer-shaped table rows (Schools | Devices).
+ for(const tr of d.querySelectorAll('table tbody tr, table tr')){
+  const td=tr.querySelector('td');
+  if(!td)continue;
+  const a=td.querySelector('a[href]')||tr.querySelector('a[href]');
+  if(!a)continue;
+  const href=a.getAttribute('href')||'';
+  const label=txt(a)||txt(td)||'';
+  if(/^(schools?|devices?|location|name)$/i.test(label))continue;
+  if(/[?&]sch=|recvschoolsdev|schooltechrecv|receivedevs|recvschool/i.test(href)||/\b(middle|high|elementary|academy|school|center|virtual)\b/i.test(label)){
+   add(label,href);
+  }
+ }
  for(const a of d.querySelectorAll('a[href]')){
   const href=a.getAttribute('href')||'';
   if(!/[?&]sch=|recvschoolsdev|schooltechrecv|receivedevs|recvschool/i.test(href))continue;
   add(txt(a)||a.getAttribute('title')||'',href);
- }
- for(const tr of d.querySelectorAll('table tbody tr, table tr')){
-  const a=tr.querySelector('a[href*="sch="],a[href*="recv"]');
-  if(!a)continue;
-  const cells=[...tr.querySelectorAll('td')].map(c=>txt(c)).filter(Boolean);
-  add(cells[0]||txt(a),a.getAttribute('href')||'');
  }
  return out;
 }
@@ -633,15 +655,23 @@ async function ctFindReceiveSchoolForAsset(asset,schools){
  return ctReceiveAssetIndex[needle]||null;
 }
 async function ctResolveReceiveSchool(b,asset,schools){
- // Prefer the /receivedevs page that lists the asset. Exact school match only when the index missed it.
+ // Prefer the /receivedevs page that lists the asset. Sheet Col B / deliver-sch is the Clearer loc fallback.
  const needle=String(asset||'').trim().toLowerCase();
  if(needle&&ctReceiveAssetIndex[needle])return ctReceiveAssetIndex[needle];
  const meta=ctAssetDeliverMeta(b,asset);
  const list=schools||Object.values(ctReceiveLocationMap);
- const locSch=String(meta.sch||'').trim();
+ let locSch=String(meta.sch||'').trim();
+ let locName=String(meta.locationName||'').trim();
+ if(!locSch&&b?.sheetRows?.length){
+  const row=(b.sheetRows||[]).find(r=>String(r.asset||'').trim().toLowerCase()===needle);
+  const req=String(row?.requested||row?.locationName||row?.sch||'').trim();
+  if(req){locSch=req;locName=locName||req}
+ }
  if(locSch){
-  const matched=ctMatchReceiveSchool({sch:locSch,locationName:meta.locationName||locSch},list);
+  const matched=ctMatchReceiveSchool({sch:locSch,locationName:locName||locSch},list);
   if(matched)return matched;
+  // Sheet named the school (e.g. Arnold Middle School) — same URL shape as Inbound Clearer / Union.
+  return{sch:locSch,name:locName||locSch,url:meta.deliveryUrl&&/recvschoolsdev|schooltechrecv|receivedevs/i.test(String(meta.deliveryUrl))?meta.deliveryUrl:ctReceiveUrlForSch(locSch)};
  }
  return ctFindReceiveSchoolForAsset(asset,list);
 }
@@ -674,7 +704,7 @@ async function receiveStage(b,a,knownDelivered=false){
    }
    if(!rgIsDeliveredStatus(before.status)){
     if(!knownDelivered||pf.mode==='safe'){
-     return{ok:true,result:'SKIPPED',msg:`Current status is ${before.status}; expected Delivered. Receive skipped.`,status:before.status,skipped:true};
+     return{ok:false,result:'FAILED',msg:`Current status is ${before.status}; expected Delivered. Receive not attempted.`,status:before.status};
     }
    }
   }else if(before.available&&!before.status){
@@ -688,7 +718,7 @@ async function receiveStage(b,a,knownDelivered=false){
  }
  // A+C: deliver-sch first, then /receivedevs hub — no manual location pick for Receive.
  const hit=await ctResolveReceiveSchool(b,a,schools);
- if(!hit?.url)return{ok:true,result:'SKIPPED',msg:`Device ${a} is not listed on any /receivedevs school page. Receive skipped.`,skipped:true};
+ if(!hit?.url)return{ok:false,result:'FAILED',msg:`Device ${a} is not listed on any /receivedevs school page. Receive not attempted.`};
  const startUrl=hit.url;
  const latest=b?.id?load(b.id):b;
  let receiveUrl;
@@ -728,8 +758,8 @@ async function receiveStage(b,a,knownDelivered=false){
   return{ok:true,result:'SKIPPED',msg:(parsed.msg?parsed.msg+' ':'')+`Already ${after.status} — receive skipped.`,status:after.status,skipped:true,alreadyReceived:true};
  }
  if(after.available&&after.status&&rgIsDeliveredStatus(after.status)&&!parsed.ok){
-  // Still Delivered after an unverified attempt — skip (do not fail the batch).
-  return{ok:true,result:'SKIPPED',msg:(parsed.msg?parsed.msg+' ':'')+'Still Delivered after receive attempt — skipped.',status:'Delivered',skipped:true,stillDelivered:true};
+  // Still Delivered after receive attempt — failed (do not report COMPLETE).
+  return{ok:false,result:'FAILED',msg:(parsed.msg?parsed.msg+' ':'')+'Still Delivered after receive attempt.',status:'Delivered',stillDelivered:true};
  }
  return parsed;
 }
@@ -805,8 +835,10 @@ function finalizeResult(r,mode){
  const deliverOK=/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver||'')||alreadyDelivered||deliverSkipped;
  const receiveOK=/^(RECEIVED|ALREADY RECEIVED)$/i.test(r.receive||'');
  const deliverOnly=/^(deliver|deliver_recv)$/i.test(mode||'')&&/^NOT ATTEMPTED$/i.test(r.drop||'');
- const receiveSkipped=/^SKIPPED$/i.test(r.receive||'');
- const receiveDone=receiveOK||receiveSkipped||/^ALREADY RECEIVED$/i.test(r.receive||'');
+ // Only count Receive SKIPPED as done when it is a true already-received skip — not "still Delivered" / not listed.
+ const receiveMsg=String(r.receiveMsg||'');
+ const receiveSkippedOk=/^SKIPPED$/i.test(r.receive||'')&&/(already\s+receiv|no active Delivered ticket|Already Received)/i.test(receiveMsg);
+ const receiveDone=receiveOK||receiveSkippedOk;
  if(ctModeReceiveOnly(mode||'')){
   r.final=receiveDone?'COMPLETE':(/^FAILED$/i.test(r.receive||'')?'FAILED':'PARTIAL');
  }else if(ctModeNeedsReceive(mode||'')){
@@ -846,7 +878,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.57'}catch(_){return'2.31.57'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.59'}catch(_){return'2.31.59'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -2069,7 +2101,7 @@ async function ctRunDropBatchInline(i){
    const snap=load(i)||b;
    const hit=await ctResolveReceiveSchool(snap,a,schools);
    if(!hit?.url){
-    persistResult(a,r=>{r.receive='SKIPPED';r.receiveMsg=`Device ${a} is not listed on any /receivedevs school page. Receive skipped.`;finalizeResult(r,snap.mode)});
+    persistResult(a,r=>{r.receive='FAILED';r.receiveMsg=`Device ${a} is not listed on any /receivedevs school page. Receive not attempted.`;finalizeResult(r,snap.mode)});
     continue
    }
    const key=String(hit.sch||'').toLowerCase();
@@ -2379,7 +2411,7 @@ function ctCreateBatch(mode,tok,locationHint,preparedRows=null){
 }
 function ctDropReadyMessage(mode,locationName){if(!ctDropAssets.length)return'Load a spreadsheet with Asset IDs / serials in Column A'+(mode==='drop'||mode==='receive'?'':'; optional Deliver Location in Column B')+'.';return`Ready: ${ctDropAssets.length} device(s) from ${ctDropFilename}.`}
 function ctUpdateDropStats(batch=null){const w=document.getElementById(CT_TOOL.workspace);if(!w)return;const vals=batch?summary(batch):{total:ctDropAssets.length,processed:0,complete:0,partial:0,failed:0};for(const [id,v] of Object.entries({ct_tools_drop_total:vals.total,ct_tools_drop_processed:vals.processed,ct_tools_drop_complete:vals.complete,ct_tools_drop_partial:vals.partial,ct_tools_drop_failed:vals.failed})){const el=w.querySelector('#'+id);if(el)el.textContent=v}}
-function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('drop'))}</h2><div>Load serials/assets, pick a workflow, and Unleash. Deliver schools come from /drop pages. Receive uses /receivedevs. Clear all is only for Delivered → Receive. Location fields below are optional overrides.</div><div class="ctw-grid" style="margin-top:14px"><div><label>Workflow</label><select id="ct_tools_mode"><option value="drop">Fixed/QC → DropMe</option><option value="deliver">Inbound/DropMe → Delivered</option><option value="both">Fixed/QC → DropMe → Delivered</option><option value="deliver_recv">Inbound/DropMe → Delivered → Receive</option><option value="receive">Delivered → Receive</option><option value="full">Fixed/QC → DropMe → Delivered → Receive</option></select></div><div><label>Spreadsheet</label><input id="${CT_TOOL.dropFile}" type="file" accept=".csv,.xlsx,.xlsm,.xls,.txt"><div style="font-size:12px;margin-top:5px;color:#666">Col A = Asset/Serial (required). Col B = Deliver Location (optional override).</div><label id="ct_tools_clear_all_wrap" style="display:none;margin-top:8px"><input id="ct_tools_clear_all" type="checkbox"> Clear all — receive every device listed on /receivedevs</label></div><div><label>Deliver Location <span style="font-weight:600;color:#888">(optional override)</span></label><select id="ct_tools_location"><option value="">Loading locations...</option></select><input id="ct_tools_location_manual" type="text" placeholder="Optional: force one school for whole batch" style="margin-top:6px"><button id="ct_tools_refresh_locations" style="margin-top:6px;width:100%">Refresh Deliver Locations</button></div></div><div class="ctw-actions"><button id="ct_tools_drop_go" class="go" disabled>${esc(ctActionLabel('UNLEASH THE POWER','START PROCESSOR'))}</button><button id="ct_tools_drop_pause" class="warn">PAUSE / RESUME</button><button id="ct_tools_drop_stop" class="bad">STOP</button><button id="ct_tools_drop_report">View Battle Report</button></div><div id="${CT_TOOL.dropStatus}" class="ctw-status">Load a spreadsheet.</div><div class="ctw-stats"><div class="ctw-stat">Total<b id="ct_tools_drop_total">${ctDropAssets.length||0}</b></div><div class="ctw-stat">Processed<b id="ct_tools_drop_processed">0</b></div><div class="ctw-stat">Complete<b id="ct_tools_drop_complete">0</b></div><div class="ctw-stat">Partial<b id="ct_tools_drop_partial">0</b></div><div class="ctw-stat">Failed<b id="ct_tools_drop_failed">0</b></div></div></div>`;
+function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<div class="ctw-card"><h2>${esc(ctToolLabel('drop'))}</h2><div>Load serials/assets, pick a workflow, and Unleash. Deliver schools come from /drop. Receive loc comes from whichever /receivedevs school lists the device (Inbound Clearer style). Workflows finish one phase for all devices before the next (Drop → Deliver → Receive). Clear all is Delivered → Receive only and skips the spreadsheet.</div><div class="ctw-grid" style="margin-top:14px"><div><label>Workflow</label><select id="ct_tools_mode"><option value="drop">Fixed/QC → DropMe</option><option value="deliver">Inbound/DropMe → Delivered</option><option value="both">Fixed/QC → DropMe → Delivered</option><option value="deliver_recv">Inbound/DropMe → Delivered → Receive</option><option value="receive">Delivered → Receive</option><option value="full">Fixed/QC → DropMe → Delivered → Receive</option></select></div><div><label>Spreadsheet</label><input id="${CT_TOOL.dropFile}" type="file" accept=".csv,.xlsx,.xlsm,.xls,.txt"><div style="font-size:12px;margin-top:5px;color:#666">Col A = Asset/Serial (required). Col B = Deliver Location (optional; receive still uses /receivedevs).</div><label id="ct_tools_clear_all_wrap" style="display:none;margin-top:8px"><input id="ct_tools_clear_all" type="checkbox"> Clear all — receive every device listed on /receivedevs</label></div><div><label>Deliver Location <span style="font-weight:600;color:#888">(optional override)</span></label><select id="ct_tools_location"><option value="">Loading locations...</option></select><input id="ct_tools_location_manual" type="text" placeholder="Optional: force one school for whole batch" style="margin-top:6px"><button id="ct_tools_refresh_locations" style="margin-top:6px;width:100%">Refresh Deliver Locations</button></div></div><div class="ctw-actions"><button id="ct_tools_drop_go" class="go" disabled>${esc(ctActionLabel('UNLEASH THE POWER','START PROCESSOR'))}</button><button id="ct_tools_drop_pause" class="warn">PAUSE / RESUME</button><button id="ct_tools_drop_stop" class="bad">STOP</button><button id="ct_tools_drop_report">View Battle Report</button></div><div id="${CT_TOOL.dropStatus}" class="ctw-status">Load a spreadsheet.</div><div class="ctw-stats"><div class="ctw-stat">Total<b id="ct_tools_drop_total">${ctDropAssets.length||0}</b></div><div class="ctw-stat">Processed<b id="ct_tools_drop_processed">0</b></div><div class="ctw-stat">Complete<b id="ct_tools_drop_complete">0</b></div><div class="ctw-stat">Partial<b id="ct_tools_drop_partial">0</b></div><div class="ctw-stat">Failed<b id="ct_tools_drop_failed">0</b></div></div></div>`;
  const f=c.querySelector('#'+CT_TOOL.dropFile),m=c.querySelector('#ct_tools_mode'),ls=c.querySelector('#ct_tools_location'),lm=c.querySelector('#ct_tools_location_manual'),go=c.querySelector('#ct_tools_drop_go'),st=c.querySelector('#'+CT_TOOL.dropStatus),refresh=c.querySelector('#ct_tools_refresh_locations');let remoteToken='';const chosen=()=>lm.value.trim()||ls.value.trim();
  const ready=()=>{
   const clearWrap=c.querySelector('#ct_tools_clear_all_wrap');
@@ -2471,7 +2503,29 @@ function ctRenderDropTool(c){const b=latest(),s=b?summary(b):null;c.innerHTML=`<
      if(!listed.assets.length){go.disabled=false;return st.textContent='No devices are listed on /receivedevs.'}
      if(!confirm(`Receive ${listed.assets.length} devices at ${schoolCount} schools?\n\nThis receives every device currently listed on /receivedevs.`)){go.disabled=false;return}
      clearPairs=listed.assets;
-    }else if(!confirm(`This will perform ONE status change per device:\nDelivered → Receive\nSchools: from /receivedevs\nDevices: ${ctDropAssets.length}\n\nContinue?`)){go.disabled=false;return}
+    }else{
+     // Match Col B school names to /receivedevs (or build /recvschoolsdev?sch=… like the Clearer).
+     if(ctDropPerRow){
+      st.textContent='Matching sheet locations to /receivedevs…';
+      let recvSchools=[];
+      try{recvSchools=await ctLoadReceiveSchools(true)}catch(_){recvSchools=[]}
+      prepared=(ctDropRows||[]).map(r=>({...r}));
+      for(const row of prepared){
+       if(row.skipped||!row.asset)continue;
+       const req=String(row.requested||row.locationName||row.sch||'').trim();
+       if(!req)continue;
+       const matched=ctMatchReceiveSchool({sch:req,locationName:req},recvSchools);
+       if(matched){
+        row.sch=matched.sch;row.locationName=matched.name||matched.sch;row.deliveryUrl=matched.url||ctReceiveUrlForSch(matched.sch);row.matchStatus='auto';
+       }else{
+        row.sch=req;row.locationName=req;row.deliveryUrl=ctReceiveUrlForSch(req);row.matchStatus='auto';
+       }
+      }
+      ctDropRows=prepared;
+     }
+     const locNote=ctDropPerRow?'Schools: Col B matched to /receivedevs (Clearer-style)':'Schools: from /receivedevs listing';
+     if(!confirm(`This will perform ONE status change per device:\nDelivered → Receive\n${locNote}\nDevices: ${ctDropAssets.length}\n\nContinue?`)){go.disabled=false;return}
+    }
    }else if(m.value==='both'||m.value==='full'){
     if(!remoteToken){try{const x=await ctRemoteDropContext();remoteToken=x.token;ctSyncDeliverLocationSelect(x.items||[])}catch(_){}}
     prepared=ctDropPerRow?(ctDropRows||[]).map(r=>({...r})) : null;
@@ -2989,7 +3043,7 @@ function ctUpdateRequest(url){return new Promise((resolve,reject)=>{const bust=u
 async function ctCheckForUpdate(){const text=await ctUpdateRequest(CT_UPDATE_META_URL),m=text.match(/^\/\/\s*@version\s+([^\s]+)\s*$/m);if(!m)throw Error('Could not read the published version from GitHub.');const current=ctInstalledVersion(),latest=String(m[1]).trim();return{current,latest,available:ctVersionCompare(latest,current)>0}}
 function ctRefreshUpdateCheck(){try{sessionStorage.setItem(P+'update_reopen','1');sessionStorage.removeItem(P+'update_reload')}catch(_){}location.reload()}
 function ctLaunchUpdate(){try{sessionStorage.setItem(P+'update_reload','1')}catch(_){}const u=CT_UPDATE_SCRIPT_URL+(CT_UPDATE_SCRIPT_URL.includes('?')?'&':'?')+'install='+Date.now();const w=window.open(u,'_blank');if(!w)location.href=u}
-function ctSettingsUpdateCard(){return `<div><label>Cell Tech Tools Update</label><div id="ct_tools_update_status" class="ctw-status" style="margin:0 0 8px 0">Installed: v${esc(ctInstalledVersion())}. Checking GitHub…</div><button id="ct_tools_update_check" type="button" style="width:100%;min-height:42px;font-weight:800">CHECK FOR UPDATE</button><button id="ct_tools_update_now" type="button" class="go" style="width:100%;min-height:42px;font-weight:900;margin-top:7px;display:none">UPDATE NOW</button><small style="display:block;margin-top:7px">Checks the permanent Cell Tech GitHub release. <b>Update Now</b> opens the userscript install page. After Tampermonkey finishes installing, click <b>Refresh check</b> or return to this tab to reload the new version.</small></div>`}
+function ctSettingsUpdateCard(){return `<div><label>Cell Tech Tools Update</label><div id="ct_tools_update_status" class="ctw-status" style="margin:0 0 8px 0">Installed: v${esc(ctInstalledVersion())}. Checking GitHub…</div><button id="ct_tools_update_check" type="button" style="width:100%;min-height:42px;font-weight:800">CHECK FOR UPDATE</button><button id="ct_tools_update_now" type="button" class="go" style="width:100%;min-height:42px;font-weight:900;margin-top:7px;display:none">UPDATE NOW</button><small style="display:block;margin-top:7px">Checks the never replaces the production install. <b>Update Now</b> opens the test userscript install page (it never replaces production). After Tampermonkey finishes installing, click <b>Refresh check</b> or return to this tab to reload the new version.</small></div>`}
 function ctBindUpdater(c){const st=c.querySelector('#ct_tools_update_status'),check=c.querySelector('#ct_tools_update_check'),install=c.querySelector('#ct_tools_update_now');if(!st||!check||!install)return;const armRefresh=()=>{check.textContent='REFRESH CHECK';check.onclick=()=>{check.disabled=true;ctRefreshUpdateCheck()}};const run=async()=>{check.disabled=true;install.style.display='none';st.textContent='Checking GitHub for the latest Cell Tech Tools version…';try{const u=await ctCheckForUpdate();if(u.available){st.innerHTML='<b>Update available:</b> v'+esc(u.current)+' → <b>v'+esc(u.latest)+'</b>. Click <b>Update Now</b> to open the install page. After Tampermonkey installs it, click Refresh check.';install.style.display='block';check.textContent='CHECK FOR UPDATE';check.onclick=run}else{st.innerHTML='<b>Up to date.</b> Installed v'+esc(u.current)+' — GitHub v'+esc(u.latest)+'.';check.textContent='CHECK FOR UPDATE';check.onclick=run}}catch(e){st.textContent='Update check failed: '+(e?.message||String(e));check.textContent='CHECK FOR UPDATE';check.onclick=run}finally{check.disabled=false}};check.onclick=run;install.onclick=()=>{ctLaunchUpdate();armRefresh()};setTimeout(run,150)}
 document.addEventListener('visibilitychange',()=>{if(document.hidden)return;try{if(sessionStorage.getItem(P+'update_reload')==='1')ctRefreshUpdateCheck()}catch(_){}});
 function ctRenderSettings(c){
