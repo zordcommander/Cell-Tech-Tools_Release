@@ -2,7 +2,7 @@
 
 // @name         Cell Tech Universal RepairGenie Tools
 // @namespace    celltech.repairgenie
-// @version      2.31.59
+// @version      2.31.60
 // @description  Unified RepairGenie tools with Power Processor, Parts Forge, Rewind the Battle, Release the Minions, Battle Reports, Battle Tally, and Days in Shop.
 // @match        *://*.repairgenie.net/*
 // @run-at       document-idle
@@ -828,29 +828,35 @@ function modal(b,filter='all'){styles();document.getElementById(P+'modal')?.remo
 const render=f=>{let rr=b.results.filter(r=>f==='all'||(f==='failed'&&r.final==='FAILED')||(f==='partial'&&r.final==='PARTIAL')||(f==='complete'&&r.final==='COMPLETE')||(f==='already'&&(r.drop.includes('ALREADY')||r.deliver.includes('ALREADY')||(r.receive||'').includes('ALREADY'))));m.querySelector('#'+P+'tbody').innerHTML=rr.map(r=>`<tr class="${r.final==='FAILED'?'f':r.final==='PARTIAL'?'p':'c'}"><td>${esc(r.asset)}</td><td>${esc(r.drop)}</td><td>${esc(r.deliver)}</td>${showRecv?`<td>${esc(r.receive||'')}</td>`:''}<td><b>${esc(r.final)}</b></td><td>${esc(r.location)}</td><td>${esc([r.dropMsg,r.deliverMsg,r.receiveMsg].filter(Boolean).join(' | '))}</td><td>${esc(r.time)}</td></tr>`).join('')};m.querySelectorAll('[data-f]').forEach(x=>x.onclick=()=>render(x.dataset.f));m.querySelector('#'+P+'csv').onclick=()=>dlCSV(b);m.querySelector('#'+P+'xlsx').onclick=()=>dlXLSX(b);m.querySelector('#'+P+'close').onclick=()=>bg.remove();bg.onclick=e=>{if(e.target===bg)bg.remove()};render(filter)}
 function resultFor(b,a){return b.results.find(r=>r.asset.toLowerCase()===String(a).toLowerCase())}
 function ensureResult(b,a){let r=resultFor(b,a);if(!r){const meta=ctAssetDeliverMeta(b,a);r={asset:a,drop:'NOT ATTEMPTED',dropMsg:'',deliver:'NOT ATTEMPTED',deliverMsg:'',receive:'NOT ATTEMPTED',receiveMsg:'',final:'PENDING',location:meta.locationName||meta.sch||(b.locationOverride?b.location:'')||'',time:''};b.results.push(r)}if(r.receive==null)r.receive='NOT ATTEMPTED';if(r.receiveMsg==null)r.receiveMsg='';return r}
+function ctDeliverSkipIsSuccess(msg){
+ // Already Delivered / Received skips are success. "Not listed" / wrong status are not.
+ return/(already\s+deliver|Already Delivered|already\s+receiv|Already Received)/i.test(String(msg||''))
+}
 function finalizeResult(r,mode){
  const alreadyDelivered=/^ALREADY DELIVERED$/i.test(r.drop||'')||/^ALREADY DELIVERED$/i.test(r.deliver||'');
- const deliverSkipped=/^SKIPPED$/i.test(r.deliver||'');
+ const deliverMsg=String(r.deliverMsg||'');
+ const deliverSkippedOk=/^SKIPPED$/i.test(r.deliver||'')&&ctDeliverSkipIsSuccess(deliverMsg);
  const dropOK=/^(DROPPED|ALREADY DROPPED|ALREADY INBOUND)$/i.test(r.drop||'')||alreadyDelivered;
- const deliverOK=/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver||'')||alreadyDelivered||deliverSkipped;
+ const deliverOK=/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver||'')||alreadyDelivered||deliverSkippedOk;
  const receiveOK=/^(RECEIVED|ALREADY RECEIVED)$/i.test(r.receive||'');
  const deliverOnly=/^(deliver|deliver_recv)$/i.test(mode||'')&&/^NOT ATTEMPTED$/i.test(r.drop||'');
  // Only count Receive SKIPPED as done when it is a true already-received skip — not "still Delivered" / not listed.
  const receiveMsg=String(r.receiveMsg||'');
  const receiveSkippedOk=/^SKIPPED$/i.test(r.receive||'')&&/(already\s+receiv|no active Delivered ticket|Already Received)/i.test(receiveMsg);
  const receiveDone=receiveOK||receiveSkippedOk;
- if(ctModeReceiveOnly(mode||'')){
+ if(mode==='drop'){
+  r.final=dropOK?'COMPLETE':(/^FAILED$/i.test(r.drop||'')?'FAILED':'PARTIAL');
+ }else if(ctModeReceiveOnly(mode||'')){
   r.final=receiveDone?'COMPLETE':(/^FAILED$/i.test(r.receive||'')?'FAILED':'PARTIAL');
  }else if(ctModeNeedsReceive(mode||'')){
   if(deliverOnly){
    // Already-delivered skip on deliver_recv: receive may still be needed unless already Received.
-   if(deliverSkipped&&!receiveDone)r.final=receiveDone?'COMPLETE':'PARTIAL';
-   else r.final=!deliverOK?'FAILED':receiveDone?'COMPLETE':'PARTIAL';
+   r.final=!deliverOK?'FAILED':receiveDone?'COMPLETE':'PARTIAL';
   }else{
    r.final=!dropOK?'FAILED':!deliverOK?'PARTIAL':receiveDone?'COMPLETE':'PARTIAL';
   }
  }else if(deliverOnly||mode==='deliver'){
-  r.final=deliverOK?'COMPLETE':'FAILED';
+  r.final=deliverOK?'COMPLETE':(/^FAILED$/i.test(r.deliver||'')||/^SKIPPED$/i.test(r.deliver||'')?'FAILED':'PARTIAL');
  }else{
   r.final=!dropOK?'FAILED':deliverOK?'COMPLETE':'PARTIAL';
  }
@@ -878,7 +884,7 @@ function ctRaveReplaySidebarNav(){if(getTheme()!=='rave'||ctRaveQuiet()||localSt
 // CELL TECH SHARED REPAIRGENIE TOOLS
 // Bulk Parts Processor + Days in Shop
 // ============================================================================
-const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.59'}catch(_){return'2.31.59'}})();
+const CT_VERSION=(()=>{try{return (typeof GM_info!=='undefined'&&GM_info?.script?.version)||'2.31.60'}catch(_){return'2.31.60'}})();
 const CTK={rows:'ctrg_parts_rows',results:'ctrg_parts_results',state:'ctrg_parts_state'};
 const CT_DEFAULT={status:'idle',index:0,awaiting:false,last:null,startedAt:null};
 const CT_FIELDS={
@@ -2056,8 +2062,12 @@ async function ctRunDropBatchInline(i){
      if(dr?.result==='ALREADY DELIVERED'){
        r.drop='ALREADY DELIVERED';r.dropMsg=dr.msg||'';r.deliver='ALREADY DELIVERED';r.deliverMsg='Delivery skipped because RepairGenie already reports Delivered.';
        if(ctModeNeedsReceive(snap.mode)){r.receive='NOT ATTEMPTED';r.receiveMsg='';r.final='PENDING RECEIVE'}
-       else r.final='COMPLETE';
-     }else{r.drop=dr?.result||'FAILED';r.dropMsg=dr?.msg||'';r.final=dr?.ok?'PENDING DELIVERY':'FAILED'}
+       else finalizeResult(r,snap.mode);
+     }else{
+       r.drop=dr?.result||'FAILED';r.dropMsg=dr?.msg||'';
+       if(snap.mode==='drop')finalizeResult(r,'drop');
+       else r.final=dr?.ok?'PENDING DELIVERY':'FAILED';
+     }
    });
  };
  const waitIfPaused=async()=>{while(true){const x=load(i);if(!x)return false;if(x.stop){x.running=false;save(x);ctSetDropLiveStatus('Batch stopped. Completed results were kept.');return false}if(!x.paused)return true;ctSetDropLiveStatus('Batch paused.');await sleep(250)}};
@@ -2078,7 +2088,10 @@ async function ctRunDropBatchInline(i){
   for(const a of b.assets){
    const prior=ensureResult(b,a);
    if(/^(SKIPPED|RECEIVED|ALREADY RECEIVED)$/i.test(prior.receive||'')){persistResult(a,r=>{finalizeResult(r,b.mode)});continue}
-   const deliverOK=ctModeReceiveOnly(b.mode)||/^(DELIVERED|ALREADY DELIVERED|SKIPPED)$/i.test(prior.deliver||'')||/^ALREADY DELIVERED$/i.test(prior.drop||'');
+   const deliverOK=ctModeReceiveOnly(b.mode)
+    ||/^(DELIVERED|ALREADY DELIVERED)$/i.test(prior.deliver||'')
+    ||/^ALREADY DELIVERED$/i.test(prior.drop||'')
+    ||(/^SKIPPED$/i.test(prior.deliver||'')&&ctDeliverSkipIsSuccess(prior.deliverMsg));
    if(!deliverOK){
     persistResult(a,r=>{if(r.final!=='COMPLETE'){r.receive='SKIPPED';r.receiveMsg='Delivered stage did not complete successfully.'}finalizeResult(r,b.mode)});
     continue
@@ -2155,7 +2168,7 @@ async function ctRunDropBatchInline(i){
    }
    const hit=dropIndex[String(a).trim().toLowerCase()];
    if(!hit){
-    persistResult(a,r=>{r.deliver='SKIPPED';r.deliverMsg='Not listed on any /drop school page. Deliver skipped.';finalizeResult(r,b.mode)});
+    persistResult(a,r=>{r.deliver='FAILED';r.deliverMsg='Not listed on any /drop school page. Deliver not attempted.';finalizeResult(r,b.mode)});
     continue
    }
    const key=String(hit.sch).toLowerCase();
@@ -2179,17 +2192,21 @@ async function ctRunDropBatchInline(i){
     persistResult(a,r=>{
      r.deliver=de?.result||'FAILED';r.deliverMsg=de?.msg||'';
      if(de?.ok||/DELIVERED|SKIPPED/i.test(de?.result||''))r.location=group.name||group.sch;
+     // Wrong-status / not-listed skips are failures for the report — not silent COMPLETE.
+     if(/^SKIPPED$/i.test(r.deliver||'')&&!ctDeliverSkipIsSuccess(r.deliverMsg)&&!de?.alreadyReceived){
+      r.deliver='FAILED';
+     }
      if(de?.alreadyReceived||rgIsReceivedStatus(de?.status)||/status\s+is\s+received\b/i.test(de?.msg||'')){
       r.receive='SKIPPED';r.receiveMsg=de?.msg||'Already Received — deliver and receive skipped.';
       finalizeResult(r,snap.mode);
       return
      }
      if(ctModeNeedsReceive(snap.mode)){
-      r.final=/^(DELIVERED|ALREADY DELIVERED|SKIPPED)$/i.test(r.deliver)?'PENDING RECEIVE':'PARTIAL';
-      if(!/^(DELIVERED|ALREADY DELIVERED|SKIPPED)$/i.test(r.deliver))finalizeResult(r,snap.mode);
+      const deliverReady=/^(DELIVERED|ALREADY DELIVERED)$/i.test(r.deliver)||(/^SKIPPED$/i.test(r.deliver||'')&&ctDeliverSkipIsSuccess(r.deliverMsg));
+      if(deliverReady)r.final='PENDING RECEIVE';
+      else finalizeResult(r,snap.mode);
      }else{
       finalizeResult(r,snap.mode);
-      if((snap.mode==='deliver')&&r.drop==='NOT ATTEMPTED')r.final=/^(DELIVERED|ALREADY DELIVERED|SKIPPED)$/i.test(r.deliver)?'COMPLETE':'FAILED';
      }
     });
     const y=load(i);if(y){y.index=done;save(y);ctUpdateDropStats(y)}
